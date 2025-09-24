@@ -7,11 +7,13 @@ STEP file and launches PrusaSlicer with the exported model.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
 import uuid
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterable, Optional
 
 import Rhino
@@ -25,6 +27,9 @@ _ENV_PATH_KEY = "PRUSA_SLICER_PATH"
 _DEFAULT_EXTENSION = ".step"
 _MAC_APP_SUFFIX = ".app"
 _MAC_APP_EXECUTABLE = os.path.join("Contents", "MacOS", "PrusaSlicer")
+_CONFIG_FILENAME = "send_to_prusa_config.json"
+_ALIAS_NAME = "SendToPrusa"
+_ALIAS_MACRO = '! _-RunPythonScript ("import send_to_prusa; send_to_prusa.send_to_prusaslicer()")'
 
 
 def _is_windows() -> bool:
@@ -56,12 +61,46 @@ def _normalize_prusa_path(path: str) -> Optional[str]:
     return None
 
 
+def _config_path() -> Path:
+    try:
+        script_path = Path(__file__).resolve()
+    except (NameError, RuntimeError):  # pragma: no cover - fallback when __file__ missing
+        return Path(tempfile.gettempdir()) / _CONFIG_FILENAME
+    return script_path.with_name(_CONFIG_FILENAME)
+
+
+def _load_configured_path() -> Optional[str]:
+    config_path = _config_path()
+    if not config_path.exists():
+        return None
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    configured = payload.get("prusa_path")
+    return _normalize_prusa_path(configured) if configured else None
+
+
+def _store_configured_path(path: str) -> None:
+    config_path = _config_path()
+    payload = json.dumps({"prusa_path": path}, indent=2)
+    try:
+        config_path.write_text(payload, encoding="utf-8")
+    except OSError:
+        print("Unable to persist the PrusaSlicer path next to the helper script.")
+
+
 def _load_prusaslicer_path() -> Optional[str]:
     env_path = os.environ.get(_ENV_PATH_KEY)
     env_path = _normalize_prusa_path(env_path) if env_path else None
     if env_path:
         sc.sticky[_PRUSA_PATH_KEY] = env_path
         return env_path
+
+    config_path = _load_configured_path()
+    if config_path:
+        sc.sticky[_PRUSA_PATH_KEY] = config_path
+        return config_path
 
     sticky_path = sc.sticky.get(_PRUSA_PATH_KEY)
     sticky_path = _normalize_prusa_path(sticky_path) if sticky_path else None
@@ -101,6 +140,7 @@ def set_prusaslicer_path(path: Optional[str] = None) -> Optional[str]:
         return None
 
     sc.sticky[_PRUSA_PATH_KEY] = candidate
+    _store_configured_path(candidate)
     print("Stored PrusaSlicer path: {}".format(candidate))
     return candidate
 
@@ -133,6 +173,40 @@ def _create_temp_export_path(extension: str = _DEFAULT_EXTENSION) -> str:
     return os.path.join(tempfile.gettempdir(), filename)
 
 
+def _ensure_command_alias() -> None:
+    macro = _ALIAS_MACRO
+    try:
+        alias_table = Rhino.ApplicationSettings.CommandAliases
+    except AttributeError:
+        alias_table = None
+    if alias_table is not None:
+        try:
+            if alias_table.Contains(_ALIAS_NAME):
+                existing = alias_table.GetMacro(_ALIAS_NAME)
+                if existing == macro:
+                    return
+                print(
+                    "Rhino alias '{}' already exists with a different macro; leaving it unchanged.".format(
+                        _ALIAS_NAME
+                    )
+                )
+                return
+            if alias_table.Add(_ALIAS_NAME, macro):
+                print("Registered Rhino alias '{}'".format(_ALIAS_NAME))
+                return
+            alias_table.SetMacro(_ALIAS_NAME, macro)
+            print("Registered Rhino alias '{}'".format(_ALIAS_NAME))
+            return
+        except Exception:
+            alias_table = None
+    command = '-Alias "{}" "{}"'.format(_ALIAS_NAME, macro.replace('"', '""'))
+    try:
+        if Rhino.RhinoApp.RunScript(command, False):
+            print("Registered Rhino alias '{}'".format(_ALIAS_NAME))
+    except Exception:
+        pass
+
+
 def _launch_prusaslicer(prusa_path: str, model_path: str) -> None:
     try:
         if _is_macos():
@@ -147,6 +221,7 @@ def _launch_prusaslicer(prusa_path: str, model_path: str) -> None:
 
 def send_to_prusaslicer() -> Rhino.Commands.Result:
     """Export the selected geometry to STEP and open it in PrusaSlicer."""
+    _ensure_command_alias()
     objects = rs.GetObjects(
         "Select objects to send to PrusaSlicer",
         preselect=True,
@@ -184,6 +259,13 @@ def send_to_prusaslicer() -> Rhino.Commands.Result:
 
     print("Exported {} objects to {} and launched PrusaSlicer.".format(len(objects), export_path))
     return Rhino.Commands.Result.Success
+
+
+__commandname__ = _ALIAS_NAME
+
+
+def RunCommand(is_interactive: bool) -> Rhino.Commands.Result:
+    return send_to_prusaslicer()
 
 
 if __name__ == "__main__":

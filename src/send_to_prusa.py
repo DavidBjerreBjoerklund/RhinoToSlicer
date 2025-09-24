@@ -5,7 +5,6 @@ script editor or bound to toolbar buttons. The main entry point is the
 ``send_to_prusaslicer`` function which exports the current selection to a
 STEP file and launches PrusaSlicer with the exported model.
 """
-from __future__ import annotations
 
 import json
 import os

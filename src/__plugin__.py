@@ -1,8 +1,8 @@
 """Rhino CPython plug-in entry point for the Rhino ➜ PrusaSlicer bridge."""
-from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 import Rhino
 import System
@@ -31,7 +31,7 @@ _CONFIGURE_COMMAND = f"{_SEND_ALIAS}SetPath"
 class RhinoToPrusaPlugIn(Rhino.PlugIns.PlugIn):
     """Minimal plug-in that exposes the Prusa commands in Rhino."""
 
-    instance: "RhinoToPrusaPlugIn" | None = None
+    instance: Optional["RhinoToPrusaPlugIn"] = None
 
     def __init__(self) -> None:
         super().__init__()
@@ -58,7 +58,7 @@ class RhinoToPrusaPlugIn(Rhino.PlugIns.PlugIn):
 class SendToPrusaCommand(Rhino.Commands.Command):
     """Expose ``SendToPrusa`` as a Rhino command."""
 
-    instance: "SendToPrusaCommand" | None = None
+    instance: Optional["SendToPrusaCommand"] = None
 
     def __init__(self) -> None:
         super().__init__()
@@ -76,7 +76,7 @@ class SendToPrusaCommand(Rhino.Commands.Command):
 class ConfigurePrusaPathCommand(Rhino.Commands.Command):
     """Expose ``SendToPrusaSetPath`` to update the slicer executable."""
 
-    instance: "ConfigurePrusaPathCommand" | None = None
+    instance: Optional["ConfigurePrusaPathCommand"] = None
 
     def __init__(self) -> None:
         super().__init__()

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Installer utility for the Rhino ➜ PrusaSlicer bridge."""
-from __future__ import annotations
 
 import argparse
 import json

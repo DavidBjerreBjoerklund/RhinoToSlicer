@@ -1,13 +1,8 @@
 """Send selected Rhino geometry to PrusaSlicer.
 
-This module provides helper functions that can be executed from Rhino's Python
-script editor or bound to toolbar buttons. The main entry point is the
-``send_to_prusaslicer`` function which exports the current selection to a
-STEP file and launches PrusaSlicer with the exported model.
-
-The module also defines the :class:`SendToPrusaCommand` class so the packaged
-plug-in can register a real Rhino command that appears in the command line and
-plug-in manager, matching Rhino's preferred Python plug-in structure.
+This module contains the implementation behind the ``SendToPrusa`` Rhino
+command.  The helper functions can also be imported directly from Rhino's
+Python editor or legacy macros via the compatibility shim.
 """
 from __future__ import print_function
 
@@ -31,7 +26,7 @@ _DEFAULT_EXTENSION = ".step"
 _MAC_APP_SUFFIX = ".app"
 _MAC_APP_EXECUTABLE = os.path.join("Contents", "MacOS", "PrusaSlicer")
 _CONFIG_FILENAME = "send_to_prusa_config.json"
-_COMMAND_NAME = "SendToPrusa"
+COMMAND_NAME = "SendToPrusa"
 _DEFAULT_MAC_APP_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
 
 
@@ -236,29 +231,14 @@ def send_to_prusaslicer():
     return Result.Success
 
 
-class SendToPrusaCommand(Rhino.Commands.Command):
-    """Rhino command wrapper that executes :func:`send_to_prusaslicer`."""
-
-    def __init__(self):
-        Rhino.Commands.Command.__init__(self)
-
-    def EnglishName(self):  # noqa: N802 - Rhino API camelCase requirement
-        return _COMMAND_NAME
-
-    def RunCommand(self, doc, mode):  # noqa: N802 - Rhino API camelCase requirement
-        result = send_to_prusaslicer()
-        return result if isinstance(result, Result) else Result.Success
-
-
-# Instantiate the command so Rhino registers it when the plug-in loads.
-_command_instance = SendToPrusaCommand()
-
-
-__commandname__ = _COMMAND_NAME
+__commandname__ = COMMAND_NAME
 
 
 def RunCommand(is_interactive):
-    return send_to_prusaslicer()
+    """Entry point used by Rhino's command runner."""
+
+    result = send_to_prusaslicer()
+    return result if isinstance(result, Result) else Result.Success
 
 
 if __name__ == "__main__":

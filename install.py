@@ -17,8 +17,17 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-PLUGIN_DIRNAME = "RhinoToSlicer"
-COMMAND_RELATIVE_PATH = Path("commands") / "send_to_prusa.py"
+HERE = Path(__file__).resolve().parent
+SRC_ROOT = HERE / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from RhinoToSlicer import PLUGIN_ID  # noqa: E402 - imported after sys.path tweak
+
+PLUGIN_DIRNAME = "RhinoToSlicer {{{}}}".format(PLUGIN_ID)
+DEV_DIRNAME = "dev"
+DEV_SOURCE = SRC_ROOT / "RhinoToSlicer"
+COMMAND_RELATIVE_PATH = Path("RhinoToSlicer") / "commands" / "send_to_prusa.py"
 CONFIG_FILENAME = "send_to_prusa_config.json"
 DEFAULT_VERSION = "8.0"
 _DEFAULT_MAC_PRUSA_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
@@ -145,14 +154,15 @@ def _copy_or_link(source: Path, destination: Path, *, mode: str, dry_run: bool) 
 
 
 def install_plugin(*, plugin_dir: Path, mode: str, dry_run: bool) -> Path:
-    source = Path(__file__).resolve().parent / "src" / PLUGIN_DIRNAME
+    source = DEV_SOURCE
     if not source.exists():
-        raise FileNotFoundError(f"Unable to locate {PLUGIN_DIRNAME} next to the installer")
+        raise FileNotFoundError("Unable to locate dev files next to the installer")
 
     plugin_dir.mkdir(parents=True, exist_ok=True)
-    destination = plugin_dir / PLUGIN_DIRNAME
-    _copy_or_link(source, destination, mode=mode, dry_run=dry_run)
-    return destination / COMMAND_RELATIVE_PATH
+    plugin_root = plugin_dir / PLUGIN_DIRNAME
+    dev_destination = plugin_root / DEV_DIRNAME
+    _copy_or_link(source, dev_destination, mode=mode, dry_run=dry_run)
+    return dev_destination / COMMAND_RELATIVE_PATH
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:

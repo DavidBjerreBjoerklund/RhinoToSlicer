@@ -35,16 +35,20 @@ the active model to the slicer.
 2. Start Rhino, open **Tools → Options → Plug-ins**, and ensure the
    *RhinoToSlicer* plug-in is enabled. You can now trigger the helper by typing
    the `SendToPrusa` command, binding it to a toolbar button, or calling it from
-   macros.
+   macros. On first launch Rhino may need to load Python support before the
+   command appears; running `EditPythonScript` once forces Rhino to refresh the
+   plug-in cache.
 
 ### Manual install
 
-If you prefer not to run the installer, copy the entire `src/RhinoToSlicer`
-folder to your Rhino Python plug-ins directory manually
-(`%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns` or
-`~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`).
-Launch Rhino, enable the plug-in if necessary, and run the `SendToPrusa`
-command once to store the PrusaSlicer path.
+If you prefer not to run the installer, create a folder named
+`RhinoToSlicer {2e965250-8f1e-4e55-8b02-01c0924325b8}` in your Rhino Python
+plug-ins directory ( `%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns`
+on Windows or
+`~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`
+on macOS). Inside that folder create a `dev` subdirectory and copy the contents
+of `src/RhinoToSlicer/` into it. Launch Rhino, enable the plug-in if necessary,
+and run the `SendToPrusa` command once to store the PrusaSlicer path.
 
 ## Usage
 

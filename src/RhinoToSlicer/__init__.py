@@ -1,6 +1,7 @@
-"""RhinoToSlicer Rhino Python plug-in."""
+"""RhinoToSlicer helpers shared by the SendToPrusa command."""
 
-from .Plugin import plug_in  # noqa: F401  - ensures plug-in loads on import
-
-__all__ = ["__version__", "plug_in"]
+__all__ = ["__version__", "PLUGIN_ID"]
 __version__ = "0.2.0"
+
+
+PLUGIN_ID = "2e965250-8f1e-4e55-8b02-01c0924325b8"

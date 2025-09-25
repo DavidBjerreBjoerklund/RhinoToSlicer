@@ -5,7 +5,7 @@ script editor or bound to toolbar buttons. The main entry point is the
 ``send_to_prusaslicer`` function which exports the current selection to a
 STEP file and launches PrusaSlicer with the exported model.
 """
-from __future__ import annotations
+from __future__ import print_function
 
 import json
 import os
@@ -13,8 +13,6 @@ import subprocess
 import tempfile
 import uuid
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Iterable, Optional
 
 import Rhino
 import rhinoscriptsyntax as rs
@@ -32,16 +30,16 @@ _COMMAND_NAME = "SendToPrusa"
 _DEFAULT_MAC_APP_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
 
 
-def _is_windows() -> bool:
+def _is_windows():
     return System.Environment.OSVersion.Platform == System.PlatformID.Win32NT
 
 
-def _is_macos() -> bool:
+def _is_macos():
     platform = System.Environment.OSVersion.Platform
     return platform == System.PlatformID.MacOSX or platform == System.PlatformID.Unix
 
 
-def _normalize_prusa_path(path: str) -> Optional[str]:
+def _normalize_prusa_path(path):
     if not path:
         return None
     path = os.path.expanduser(path)
@@ -61,36 +59,38 @@ def _normalize_prusa_path(path: str) -> Optional[str]:
     return None
 
 
-def _config_path() -> Path:
+def _config_path():
     try:
-        script_path = Path(__file__).resolve()
-    except (NameError, RuntimeError):  # pragma: no cover - fallback when __file__ missing
-        return Path(tempfile.gettempdir()) / _CONFIG_FILENAME
-    return script_path.with_name(_CONFIG_FILENAME)
+        base = os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        base = tempfile.gettempdir()
+    return os.path.join(base, _CONFIG_FILENAME)
 
 
-def _load_configured_path() -> Optional[str]:
+def _load_configured_path():
     config_path = _config_path()
-    if not config_path.exists():
+    if not os.path.exists(config_path):
         return None
     try:
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        with open(config_path, "rb") as handle:
+            payload = json.load(handle)
+    except (IOError, ValueError):
         return None
     configured = payload.get("prusa_path")
     return _normalize_prusa_path(configured) if configured else None
 
 
-def _store_configured_path(path: str) -> None:
+def _store_configured_path(path):
     config_path = _config_path()
     payload = json.dumps({"prusa_path": path}, indent=2)
     try:
-        config_path.write_text(payload, encoding="utf-8")
-    except OSError:
+        with open(config_path, "wb") as handle:
+            handle.write(payload.encode("utf-8"))
+    except IOError:
         print("Unable to persist the PrusaSlicer path next to the helper script.")
 
 
-def _load_prusaslicer_path() -> Optional[str]:
+def _load_prusaslicer_path():
     env_path = os.environ.get(_ENV_PATH_KEY)
     env_path = _normalize_prusa_path(env_path) if env_path else None
     if env_path:
@@ -116,7 +116,7 @@ def _load_prusaslicer_path() -> Optional[str]:
     return None
 
 
-def _prompt_for_prusaslicer() -> Optional[str]:
+def _prompt_for_prusaslicer():
     if _is_windows():
         filter_string = "PrusaSlicer executable (*.exe)|*.exe||"
     elif _is_macos():
@@ -130,7 +130,7 @@ def _prompt_for_prusaslicer() -> Optional[str]:
     return _normalize_prusa_path(path)
 
 
-def set_prusaslicer_path(path: Optional[str] = None) -> Optional[str]:
+def set_prusaslicer_path(path=None):
     """Persist the path to the PrusaSlicer executable.
 
     If *path* is omitted a file dialog is presented. The chosen path is stored
@@ -152,7 +152,7 @@ def set_prusaslicer_path(path: Optional[str] = None) -> Optional[str]:
 
 
 @contextmanager
-def _preserve_selection(new_selection: Iterable) -> Iterable:
+def _preserve_selection(new_selection):
     previous = rs.SelectedObjects() or []
     try:
         rs.UnselectAllObjects()
@@ -165,7 +165,7 @@ def _preserve_selection(new_selection: Iterable) -> Iterable:
             rs.SelectObjects(previous)
 
 
-def _export_selection(temp_path: str) -> bool:
+def _export_selection(temp_path):
     options = Rhino.FileIO.FileWriteOptions()
     options.WriteSelectedObjectsOnly = True
     options.SuppressDialogBoxes = True
@@ -174,12 +174,12 @@ def _export_selection(temp_path: str) -> bool:
     return False
 
 
-def _create_temp_export_path(extension: str = _DEFAULT_EXTENSION) -> str:
+def _create_temp_export_path(extension=_DEFAULT_EXTENSION):
     filename = "RhinoToPrusa_{}{}".format(uuid.uuid4().hex, extension)
     return os.path.join(tempfile.gettempdir(), filename)
 
 
-def _launch_prusaslicer(prusa_path: str, model_path: str) -> None:
+def _launch_prusaslicer(prusa_path, model_path):
     try:
         if _is_macos():
             lower = prusa_path.lower()
@@ -191,7 +191,7 @@ def _launch_prusaslicer(prusa_path: str, model_path: str) -> None:
         raise RuntimeError("Unable to start PrusaSlicer: {}".format(exc))
 
 
-def send_to_prusaslicer() -> Rhino.Commands.Result:
+def send_to_prusaslicer():
     """Export the selected geometry to STEP and open it in PrusaSlicer."""
     objects = rs.GetObjects(
         "Select objects to send to PrusaSlicer",
@@ -235,7 +235,7 @@ def send_to_prusaslicer() -> Rhino.Commands.Result:
 __commandname__ = _COMMAND_NAME
 
 
-def RunCommand(is_interactive: bool) -> Rhino.Commands.Result:
+def RunCommand(is_interactive):
     return send_to_prusaslicer()
 
 

@@ -5,6 +5,7 @@ from __future__ import print_function
 from .slice import (
     COMMAND_NAME,
     RunCommand,
+    detect_rhino_version,
     send_to_prusaslicer,
     send_to_slicer,
     set_prusaslicer_path,
@@ -13,6 +14,7 @@ from .slice import (
 __all__ = [
     "COMMAND_NAME",
     "RunCommand",
+    "detect_rhino_version",
     "send_to_prusaslicer",
     "send_to_slicer",
     "set_prusaslicer_path",

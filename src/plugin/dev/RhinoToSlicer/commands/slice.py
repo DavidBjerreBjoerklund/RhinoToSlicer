@@ -26,8 +26,77 @@ _DEFAULT_EXTENSION = ".step"
 _MAC_APP_SUFFIX = ".app"
 _MAC_APP_EXECUTABLE = os.path.join("Contents", "MacOS", "PrusaSlicer")
 _CONFIG_FILENAME = "slicer_config.json"
+_RHINO_VERSION_STICKY_KEY = "RhinoToSlicer::RhinoVersion"
+_RHINO_VERSION_LOG_KEY = "RhinoToSlicer::RhinoVersionNotified"
 COMMAND_NAME = "Slice"
 _DEFAULT_MAC_APP_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
+_VERSION_CACHE = None
+
+
+def _detect_rhino_version_info():
+    try:
+        app = Rhino.RhinoApp
+    except Exception:
+        return None
+
+    try:
+        major = getattr(app, "ExeVersion")
+    except Exception:
+        major = None
+
+    try:
+        service_release = getattr(app, "ExeServiceRelease")
+    except Exception:
+        service_release = None
+
+    try:
+        candidate = getattr(app, "ExeServiceReleaseCandidate")
+    except Exception:
+        candidate = None
+
+    if major is None:
+        try:
+            text = str(getattr(app, "Version"))
+        except Exception:
+            text = None
+    else:
+        detail = None
+        if candidate and candidate > 0:
+            detail = "RC{}".format(candidate)
+        elif service_release is not None and service_release >= 0:
+            detail = "SR{}".format(service_release)
+
+        if detail:
+            text = "{} {}".format(major, detail)
+        else:
+            text = str(major)
+
+    return {
+        "major": major,
+        "service_release": service_release,
+        "service_release_candidate": candidate,
+        "text": text,
+    }
+
+
+def detect_rhino_version():
+    global _VERSION_CACHE
+    if _VERSION_CACHE is not None:
+        return _VERSION_CACHE
+
+    info = _detect_rhino_version_info()
+    if info:
+        _VERSION_CACHE = info
+        try:
+            sc.sticky[_RHINO_VERSION_STICKY_KEY] = info
+            if info.get("text") and not sc.sticky.get(_RHINO_VERSION_LOG_KEY):
+                print("Detected Rhino version: {}".format(info["text"]))
+                sc.sticky[_RHINO_VERSION_LOG_KEY] = True
+        except Exception:
+            pass
+    else:
+        _VERSION_CACHE = None
+    return _VERSION_CACHE
 
 
 def _is_windows():
@@ -250,6 +319,7 @@ def _launch_prusaslicer(prusa_path, model_path):
 
 def send_to_slicer():
     """Export the selected geometry to STEP and open it in PrusaSlicer."""
+    detect_rhino_version()
     objects = rs.GetObjects(
         "Select objects to slice in PrusaSlicer",
         preselect=True,

@@ -10,7 +10,8 @@ the active model to the slicer.
 
 - Prompts for geometry if nothing is pre-selected.
 - Remembers the PrusaSlicer executable path using Rhino's sticky dictionary or
-  the `PRUSA_SLICER_PATH` environment variable.
+  the `PRUSA_SLICER_PATH` environment variable and records the detected Rhino
+  version for troubleshooting.
 - Exports selected objects to a temporary `.step` file using Rhino's native
   exporter, naming the file after the current Rhino document when available and
   overwriting previous exports automatically.
@@ -73,3 +74,6 @@ and run the `Slice` command once to store the PrusaSlicer path.
   to launch whichever executable path you provide.
 - The installer stores configuration in `slicer_config.json` inside the
   plug-in folder so that the slicer path persists across Rhino sessions.
+- The command exposes a `RhinoToSlicer.commands.detect_rhino_version()` helper
+  that reports the running Rhino build and prints it the first time the plug-in
+  runs during a session.

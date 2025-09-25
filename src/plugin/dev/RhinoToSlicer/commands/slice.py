@@ -10,8 +10,8 @@ import json
 import os
 import subprocess
 import tempfile
-import uuid
 from contextlib import contextmanager
+import re
 
 import Rhino
 import rhinoscriptsyntax as rs
@@ -206,8 +206,33 @@ def _export_selection(temp_path):
     return False
 
 
+def _sanitize_filename(name):
+    if not name:
+        return None
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", name.strip())
+    cleaned = cleaned.strip("._")
+    return cleaned or None
+
+
+def _document_export_stem():
+    doc = Rhino.RhinoDoc.ActiveDoc
+    if doc is None:
+        return None
+
+    candidate = getattr(doc, "Path", None) or getattr(doc, "Name", None)
+    if not candidate:
+        return None
+
+    basename = os.path.basename(candidate)
+    stem, _ext = os.path.splitext(basename)
+    return _sanitize_filename(stem or basename)
+
+
 def _create_temp_export_path(extension=_DEFAULT_EXTENSION):
-    filename = "RhinoToSlicer_{}{}".format(uuid.uuid4().hex, extension)
+    stem = _document_export_stem()
+    if not stem:
+        stem = "RhinoToSlicer"
+    filename = "{}{}".format(stem, extension)
     return os.path.join(tempfile.gettempdir(), filename)
 
 
@@ -242,6 +267,12 @@ def send_to_slicer():
         return Result.Cancel
 
     export_path = _create_temp_export_path()
+
+    if os.path.exists(export_path):
+        try:
+            os.remove(export_path)
+        except OSError:
+            pass
 
     with _preserve_selection(objects):
         success = _export_selection(export_path)

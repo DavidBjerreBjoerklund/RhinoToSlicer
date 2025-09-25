@@ -2,20 +2,20 @@
 """Installer utility for the Rhino ➜ PrusaSlicer bridge.
 
 Running this script copies (or links) the packaged Rhino Python plug-in into
-Rhino's ``PythonPlugIns`` directory so the ``Slice`` command appears in
-the plug-in manager. The installer auto-detects the Rhino 8 user data
-directory on Windows and macOS, but the target can be overridden via the
-command line.
+Rhino's ``PythonPlugIns`` directory so the ``Slice`` command appears in the
+plug-in manager. It can be driven from the command line or via a simple
+graphical interface that helps select the Rhino version and PrusaSlicer path.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 HERE = Path(__file__).resolve().parent
 SRC_ROOT = HERE / "src"
@@ -33,29 +33,63 @@ DEFAULT_VERSION = "8.0"
 _DEFAULT_MAC_PRUSA_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
 
 
-def _detect_rhino_user_dir(version: str) -> Path:
-    """Locate Rhino's per-user data directory for the given version."""
-
+def _rhino_user_base() -> Path:
     if sys.platform.startswith("win"):
         appdata = os.environ.get("APPDATA")
         if appdata:
             base = Path(appdata)
         else:
             base = Path.home() / "AppData" / "Roaming"
-        return base / "McNeel" / "Rhinoceros" / version
+        return base / "McNeel" / "Rhinoceros"
 
     if sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support" / "McNeel" / "Rhinoceros"
-        return base / version
+        return Path.home() / "Library" / "Application Support" / "McNeel" / "Rhinoceros"
 
-    # Rhino 8 is only supported on Windows and macOS, but fall back to a
-    # reasonable XDG location so the installer still works in testing setups.
     base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return base / "McNeel" / "Rhinoceros" / version
+    return base / "McNeel" / "Rhinoceros"
+
+
+def _detect_rhino_user_dir(version: str) -> Path:
+    """Locate Rhino's per-user data directory for the given version."""
+
+    return _rhino_user_base() / version
 
 
 def _detect_rhino_python_plugin_dir(version: str) -> Path:
     return _detect_rhino_user_dir(version) / "Plug-ins" / "PythonPlugIns"
+
+
+def _version_sort_key(value: str) -> List[Tuple[int, object]]:
+    parts: List[Tuple[int, object]] = []
+    for token in re.findall(r"\d+|[^\d]+", value):
+        if token.isdigit():
+            parts.append((0, int(token)))
+        else:
+            parts.append((1, token.lower()))
+    return parts
+
+
+def _list_installed_versions() -> list[str]:
+    base = _rhino_user_base()
+    if not base.exists():
+        return []
+    versions = []
+    for child in base.iterdir():
+        if not child.is_dir():
+            continue
+        name = child.name
+        if not name:
+            continue
+        if name[0].isdigit() or name.lower().startswith("wip"):
+            versions.append(name)
+    return sorted(versions, key=_version_sort_key)
+
+
+def _detect_default_version() -> str:
+    versions = _list_installed_versions()
+    if versions:
+        return versions[-1]
+    return DEFAULT_VERSION
 
 
 def _normalize_prusa_path(path: str) -> Optional[str]:
@@ -189,8 +223,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--version",
-        default=DEFAULT_VERSION,
-        help="Rhino user folder version (default: %(default)s).",
+        help="Rhino user folder version. When omitted the installer chooses the newest detected version.",
     )
     parser.add_argument(
         "--mode",
@@ -213,12 +246,188 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--prusa-path",
         help="Set the PrusaSlicer executable path non-interactively (overrides the interactive prompt).",
     )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Launch the graphical installer UI.",
+    )
+    parser.add_argument(
+        "--no-gui",
+        dest="gui",
+        action="store_false",
+        help="Force the command-line installer even if GUI conditions are met.",
+    )
+    parser.set_defaults(gui=None)
     parser.set_defaults(configure_prusa=True)
     return parser.parse_args(argv)
 
 
+def _perform_install(
+    *,
+    version: str,
+    mode: str,
+    plugins_dir: Optional[Path],
+    prusa_path: Optional[str],
+    configure_prusa: bool,
+    dry_run: bool,
+) -> tuple[Path, Optional[str]]:
+    if plugins_dir:
+        plugin_dir = plugins_dir.expanduser().resolve()
+        user_dir = plugin_dir.parent
+    else:
+        user_dir = _detect_rhino_user_dir(version)
+        plugin_dir = _detect_rhino_python_plugin_dir(version)
+
+    print(f"Target Rhino user directory: {user_dir}")
+    print(f"Target Rhino Python plug-in directory: {plugin_dir}")
+
+    plugin_root = install_plugin(plugin_dir=plugin_dir, mode=mode, dry_run=dry_run)
+
+    stored_path = None
+    if configure_prusa:
+        if dry_run and not prusa_path:
+            print("Skipping PrusaSlicer path prompt during dry run.")
+        else:
+            _configure_prusa_path(plugin_root, prusa_path, dry_run=dry_run)
+            stored_path = _load_existing_config(plugin_root)
+
+    return plugin_root, stored_path
+
+
+def launch_gui(argv: Optional[list[str]] = None) -> int:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, ttk
+    except ImportError:
+        print("Tkinter is not available in this Python environment. Falling back to CLI.")
+        return 1
+
+    versions = _list_installed_versions()
+    if not versions:
+        versions = [DEFAULT_VERSION]
+
+    class InstallerApp:
+        def __init__(self, root):
+            self.root = root
+            root.title("RhinoToSlicer Installer")
+
+            self.version_var = tk.StringVar(value=versions[-1])
+            self.mode_var = tk.StringVar(value="copy")
+            default_prusa = _normalize_prusa_path(_DEFAULT_MAC_PRUSA_PATH) if sys.platform == "darwin" else ""
+            self.prusa_var = tk.StringVar(value=default_prusa or "")
+            self.status_var = tk.StringVar()
+
+            main = ttk.Frame(root, padding=12)
+            main.grid(column=0, row=0, sticky="nsew")
+            root.columnconfigure(0, weight=1)
+            root.rowconfigure(0, weight=1)
+
+            ttk.Label(main, text="Rhino version:").grid(column=0, row=0, sticky="w")
+            self.version_combo = ttk.Combobox(main, textvariable=self.version_var, values=versions, state="readonly")
+            self.version_combo.grid(column=1, row=0, sticky="ew", padx=(4, 0))
+            main.columnconfigure(1, weight=1)
+
+            ttk.Label(main, text="Install mode:").grid(column=0, row=1, sticky="w", pady=(8, 0))
+            mode_frame = ttk.Frame(main)
+            mode_frame.grid(column=1, row=1, sticky="w", pady=(8, 0))
+            ttk.Radiobutton(mode_frame, text="Copy", value="copy", variable=self.mode_var).pack(side=tk.LEFT)
+            ttk.Radiobutton(mode_frame, text="Link", value="link", variable=self.mode_var).pack(side=tk.LEFT, padx=(8, 0))
+
+            ttk.Label(main, text="PrusaSlicer path:").grid(column=0, row=2, sticky="w", pady=(8, 0))
+            path_frame = ttk.Frame(main)
+            path_frame.grid(column=1, row=2, sticky="ew", pady=(8, 0))
+            path_frame.columnconfigure(0, weight=1)
+            self.prusa_entry = ttk.Entry(path_frame, textvariable=self.prusa_var)
+            self.prusa_entry.grid(column=0, row=0, sticky="ew")
+            ttk.Button(path_frame, text="Browse…", command=self.browse_prusa).grid(column=1, row=0, padx=(4, 0))
+
+            self.configure_var = tk.BooleanVar(value=True)
+            ttk.Checkbutton(
+                main,
+                text="Store PrusaSlicer path",
+                variable=self.configure_var,
+            ).grid(column=1, row=3, sticky="w", pady=(4, 0))
+
+            self.log = tk.Text(main, width=60, height=10, state="disabled")
+            self.log.grid(column=0, row=4, columnspan=2, pady=(12, 0), sticky="nsew")
+            main.rowconfigure(4, weight=1)
+
+            button_frame = ttk.Frame(main)
+            button_frame.grid(column=0, row=5, columnspan=2, pady=(12, 0), sticky="e")
+            ttk.Button(button_frame, text="Install", command=self.install).pack(side=tk.RIGHT)
+            ttk.Button(button_frame, text="Close", command=root.destroy).pack(side=tk.RIGHT, padx=(0, 8))
+
+        def log_message(self, message: str):
+            self.log.configure(state="normal")
+            self.log.insert("end", message + "\n")
+            self.log.see("end")
+            self.log.configure(state="disabled")
+
+        def browse_prusa(self):
+            if sys.platform == "darwin":
+                path = filedialog.askopenfilename(title="Locate PrusaSlicer", filetypes=[("Applications", "PrusaSlicer.app")])
+            elif sys.platform.startswith("win"):
+                path = filedialog.askopenfilename(title="Locate PrusaSlicer", filetypes=[("Executable", "PrusaSlicer.exe")])
+            else:
+                path = filedialog.askopenfilename(title="Locate PrusaSlicer")
+            if path:
+                normalized = _normalize_prusa_path(path)
+                if normalized:
+                    self.prusa_var.set(normalized)
+                else:
+                    messagebox.showerror("Invalid Path", "The selected file is not a valid PrusaSlicer executable.")
+
+        def install(self):
+            version = self.version_var.get() or DEFAULT_VERSION
+            mode = self.mode_var.get() or "copy"
+            prusa_path = self.prusa_var.get().strip() or None
+            configure = self.configure_var.get()
+
+            target_dir = _detect_rhino_python_plugin_dir(version)
+            self.log_message(f"Installing for Rhino {version} in {target_dir}")
+
+            try:
+                plugin_root, stored_path = _perform_install(
+                    version=version,
+                    mode=mode,
+                    plugins_dir=None,
+                    prusa_path=prusa_path,
+                    configure_prusa=configure,
+                    dry_run=False,
+                )
+            except Exception as exc:  # pragma: no cover - GUI feedback
+                self.log_message(f"Installation failed: {exc}")
+                messagebox.showerror("Installation failed", str(exc))
+                return
+
+            self.log_message(f"Installed plug-in to {plugin_root}")
+            if stored_path:
+                self.prusa_var.set(stored_path)
+            messagebox.showinfo(
+                "Installation complete",
+                "Installation complete. Launch Rhino and enable the RhinoToSlicer plug-in if it does not load automatically.",
+            )
+
+    root = tk.Tk()
+    app = InstallerApp(root)
+    root.mainloop()
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
+
+    use_gui = None
+    if args.gui is None:
+        use_gui = not argv and sys.stdout.isatty()
+    else:
+        use_gui = args.gui
+
+    if use_gui:
+        result = launch_gui(argv)
+        if result == 0:
+            return 0
+        # GUI unavailable; fall through to CLI installer.
 
     if args.scripts_dir:
         print(
@@ -226,13 +435,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         plugin_dir = args.scripts_dir.expanduser().resolve()
         user_dir = plugin_dir.parent
+        version = args.version or DEFAULT_VERSION
     elif getattr(args, "plugins_dir", None):
         plugin_dir = args.plugins_dir.expanduser().resolve()
         user_dir = plugin_dir.parent
+        version = args.version or DEFAULT_VERSION
     else:
-        user_dir = _detect_rhino_user_dir(args.version)
-        plugin_dir = _detect_rhino_python_plugin_dir(args.version)
+        version = args.version or _detect_default_version()
+        user_dir = _detect_rhino_user_dir(version)
+        plugin_dir = _detect_rhino_python_plugin_dir(version)
 
+    print(f"Target Rhino version: {version}")
+    print(f"Target Rhino user directory: {user_dir}")
     print(f"Target Rhino Python plug-in directory: {plugin_dir}")
 
     try:

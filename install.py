@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Installer utility for the Rhino ➜ PrusaSlicer bridge.
 
-Running this script copies (or links) the Rhino helper into Rhino's scripts
-folder so that ``RunPythonScript`` and toolbar buttons can import it. The
-installer auto-detects the Rhino 8 user data directory on Windows and macOS,
-but the target can be overridden via the command line.
+Running this script copies (or links) the packaged Rhino Python plug-in into
+Rhino's ``PythonPlugIns`` directory so the ``SendToPrusa`` command appears in
+the plug-in manager. The installer auto-detects the Rhino 8 user data
+directory on Windows and macOS, but the target can be overridden via the
+command line.
 """
 from __future__ import annotations
 
@@ -16,11 +17,11 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-SCRIPT_NAME = "send_to_prusa.py"
+PLUGIN_DIRNAME = "RhinoToSlicer"
+COMMAND_RELATIVE_PATH = Path("commands") / "send_to_prusa.py"
 CONFIG_FILENAME = "send_to_prusa_config.json"
-ALIAS_NAME = "SendToPrusa"
-ALIAS_MACRO = '! _-RunPythonScript ("import send_to_prusa; send_to_prusa.send_to_prusaslicer()")'
 DEFAULT_VERSION = "8.0"
+_DEFAULT_MAC_PRUSA_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
 
 
 def _detect_rhino_user_dir(version: str) -> Path:
@@ -44,8 +45,8 @@ def _detect_rhino_user_dir(version: str) -> Path:
     return base / "McNeel" / "Rhinoceros" / version
 
 
-def _detect_rhino_scripts_dir(version: str) -> Path:
-    return _detect_rhino_user_dir(version) / "scripts"
+def _detect_rhino_python_plugin_dir(version: str) -> Path:
+    return _detect_rhino_user_dir(version) / "Plug-ins" / "PythonPlugIns"
 
 
 def _normalize_prusa_path(path: str) -> Optional[str]:
@@ -107,58 +108,13 @@ def _configure_prusa_path(destination: Path, provided: Optional[str], *, dry_run
         print(f"Ignoring invalid PrusaSlicer path: {provided}")
     if not normalized:
         existing = _load_existing_config(destination)
+        if not existing and sys.platform == "darwin":
+            existing = _normalize_prusa_path(_DEFAULT_MAC_PRUSA_PATH)
         normalized = _prompt_for_prusa_path(existing)
     if not normalized:
         print("PrusaSlicer path not stored. You can run the installer again with --prusa-path.")
         return
     _write_config(destination, normalized, dry_run=dry_run)
-
-
-def _alias_file(user_dir: Path) -> Path:
-    return user_dir / "settings" / "aliases.txt"
-
-
-def _ensure_alias(user_dir: Path, alias: str, macro: str, *, dry_run: bool) -> bool:
-    alias_path = _alias_file(user_dir)
-    alias_path.parent.mkdir(parents=True, exist_ok=True)
-    existing_content = ""
-    if alias_path.exists():
-        try:
-            existing_content = alias_path.read_text(encoding="utf-8")
-        except OSError:
-            print(f"Unable to read {alias_path}; skipping alias configuration.")
-            return False
-        lowered = existing_content.lstrip().lower()
-        if lowered.startswith("<"):
-            print(
-                f"Alias file {alias_path} appears to be XML. Please add the alias manually in Rhino Options."
-            )
-            return False
-        normalized_lines = [line.strip() for line in existing_content.replace("\r\n", "\n").split("\n")]
-        for line in normalized_lines:
-            if not line or line.startswith("#") or line.startswith(";"):
-                continue
-            if "=" not in line:
-                continue
-            name, _ = line.split("=", 1)
-            if name.strip().lower() == alias.lower():
-                print(f"Alias '{alias}' already configured in {alias_path}.")
-                return True
-    line = f"{alias}={macro}"
-    if dry_run:
-        print(f"Would append alias to {alias_path}: {line}")
-        return True
-    prefix = ""
-    if alias_path.exists() and existing_content and not existing_content.endswith("\n"):
-        prefix = "\n"
-    try:
-        with alias_path.open("a", encoding="utf-8") as stream:
-            stream.write(prefix + line + "\n")
-    except OSError as exc:
-        print(f"Failed to update {alias_path}: {exc}")
-        return False
-    print(f"Added '{alias}' alias to {alias_path}.")
-    return True
 
 
 def _copy_or_link(source: Path, destination: Path, *, mode: str, dry_run: bool) -> None:
@@ -167,8 +123,9 @@ def _copy_or_link(source: Path, destination: Path, *, mode: str, dry_run: bool) 
             action = "would replace"
         else:
             if destination.is_dir() and not destination.is_symlink():
-                raise RuntimeError(f"Destination {destination} is a directory, aborting")
-            destination.unlink()
+                shutil.rmtree(destination)
+            else:
+                destination.unlink()
             action = "replaced"
         print(f"Existing {destination} {action}.")
 
@@ -177,22 +134,25 @@ def _copy_or_link(source: Path, destination: Path, *, mode: str, dry_run: bool) 
         return
 
     if mode == "copy":
-        shutil.copy2(source, destination)
+        if source.is_dir():
+            shutil.copytree(source, destination)
+        else:
+            shutil.copy2(source, destination)
     else:
-        destination.symlink_to(source)
+        destination.symlink_to(source, target_is_directory=source.is_dir())
 
     print(f"Installed {destination} ({mode}).")
 
 
-def install_plugin(*, scripts_dir: Path, mode: str, dry_run: bool) -> Path:
-    source = Path(__file__).resolve().parent / "src" / SCRIPT_NAME
+def install_plugin(*, plugin_dir: Path, mode: str, dry_run: bool) -> Path:
+    source = Path(__file__).resolve().parent / "src" / PLUGIN_DIRNAME
     if not source.exists():
-        raise FileNotFoundError(f"Unable to locate {SCRIPT_NAME} next to the installer")
+        raise FileNotFoundError(f"Unable to locate {PLUGIN_DIRNAME} next to the installer")
 
-    scripts_dir.mkdir(parents=True, exist_ok=True)
-    destination = scripts_dir / SCRIPT_NAME
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    destination = plugin_dir / PLUGIN_DIRNAME
     _copy_or_link(source, destination, mode=mode, dry_run=dry_run)
-    return destination
+    return destination / COMMAND_RELATIVE_PATH
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -200,7 +160,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--scripts-dir",
         type=Path,
-        help="Override the Rhino scripts directory. Defaults to the Rhino 8 user folder for the current OS.",
+        help="[deprecated] Override the Rhino scripts directory used by older installs.",
+    )
+    parser.add_argument(
+        "--plugins-dir",
+        type=Path,
+        help="Override the Rhino Python plug-in directory. Defaults to the Rhino 8 user folder for the current OS.",
     )
     parser.add_argument(
         "--version",
@@ -228,16 +193,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--prusa-path",
         help="Set the PrusaSlicer executable path non-interactively (overrides the interactive prompt).",
     )
-    parser.add_argument(
-        "--alias-name",
-        default=ALIAS_NAME,
-        help="Name of the Rhino command alias to create (default: %(default)s).",
-    )
-    parser.add_argument(
-        "--no-alias",
-        action="store_true",
-        help="Skip configuring the Rhino command alias.",
-    )
     parser.set_defaults(configure_prusa=True)
     return parser.parse_args(argv)
 
@@ -246,16 +201,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
 
     if args.scripts_dir:
-        scripts_dir = args.scripts_dir.expanduser().resolve()
-        user_dir = scripts_dir.parent
+        print(
+            "--scripts-dir is deprecated for the packaged plug-in installer. Use --plugins-dir instead."
+        )
+        plugin_dir = args.scripts_dir.expanduser().resolve()
+        user_dir = plugin_dir.parent
+    elif getattr(args, "plugins_dir", None):
+        plugin_dir = args.plugins_dir.expanduser().resolve()
+        user_dir = plugin_dir.parent
     else:
         user_dir = _detect_rhino_user_dir(args.version)
-        scripts_dir = user_dir / "scripts"
+        plugin_dir = _detect_rhino_python_plugin_dir(args.version)
 
-    print(f"Target Rhino scripts directory: {scripts_dir}")
+    print(f"Target Rhino Python plug-in directory: {plugin_dir}")
 
     try:
-        destination = install_plugin(scripts_dir=scripts_dir, mode=args.mode, dry_run=args.dry_run)
+        destination = install_plugin(plugin_dir=plugin_dir, mode=args.mode, dry_run=args.dry_run)
     except Exception as exc:  # pragma: no cover - installer level error
         print(f"Installation failed: {exc}")
         return 1
@@ -267,28 +228,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             _configure_prusa_path(destination, args.prusa_path, dry_run=args.dry_run)
 
-    alias_configured = True
-    if not args.no_alias:
-        alias_configured = _ensure_alias(user_dir, args.alias_name, ALIAS_MACRO, dry_run=args.dry_run)
-
     if args.dry_run:
         print("Dry run complete. No files were modified.")
     else:
         print("Installation complete.")
-        if args.no_alias:
-            print(
-                "Add a button or alias manually with:\n"
-                "! _-RunPythonScript (\"import send_to_prusa; send_to_prusa.send_to_prusaslicer()\")"
-            )
-        elif alias_configured:
-            print(
-                f"Rhino alias '{args.alias_name}' now points at the helper. Use it directly or assign it to a toolbar button."
-            )
-        else:
-            print(
-                f"Unable to update Rhino's alias list automatically. Add '{args.alias_name}' manually with:\n"
-                f"{ALIAS_MACRO}"
-            )
+        print(
+            "Launch Rhino and enable the RhinoToSlicer plug-in under Tools → Options → Plug-ins if it is not loaded automatically."
+        )
+        print("Run the SendToPrusa command to send geometry to PrusaSlicer.")
     return 0
 
 

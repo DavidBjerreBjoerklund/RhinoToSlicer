@@ -162,18 +162,40 @@ def set_prusaslicer_path(path=None):
     return candidate
 
 
+def _select_with_rhinodoc(object_ids):
+    doc = Rhino.RhinoDoc.ActiveDoc
+    if doc is None:
+        if object_ids:
+            rs.SelectObjects(list(object_ids))
+        return
+
+    for object_id in object_ids or ():
+        try:
+            doc.Objects.Select(object_id, True, True)
+        except Exception:
+            pass
+
+
+def _unselect_all_with_rhinodoc():
+    doc = Rhino.RhinoDoc.ActiveDoc
+    if doc is None:
+        rs.UnselectAllObjects()
+        return
+    doc.Objects.UnselectAll()
+
+
 @contextmanager
 def _preserve_selection(new_selection):
     previous = rs.SelectedObjects() or []
     try:
-        rs.UnselectAllObjects()
+        _unselect_all_with_rhinodoc()
         if new_selection:
-            rs.SelectObjects(list(new_selection))
+            _select_with_rhinodoc(tuple(new_selection))
         yield new_selection
     finally:
-        rs.UnselectAllObjects()
+        _unselect_all_with_rhinodoc()
         if previous:
-            rs.SelectObjects(previous)
+            _select_with_rhinodoc(tuple(previous))
 
 
 def _export_selection(temp_path):

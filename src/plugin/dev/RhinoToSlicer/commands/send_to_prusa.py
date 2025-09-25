@@ -62,9 +62,12 @@ def _normalize_prusa_path(path):
 def _config_path():
     try:
         commands_dir = os.path.dirname(os.path.abspath(__file__))
-        plugin_root = os.path.dirname(commands_dir)
-        if plugin_root and os.path.isdir(plugin_root):
+        package_root = os.path.dirname(commands_dir)
+        plugin_root = os.path.dirname(package_root)
+        if plugin_root and os.path.basename(plugin_root) == "dev" and os.path.isdir(plugin_root):
             base = plugin_root
+        elif package_root and os.path.isdir(package_root):
+            base = package_root
         else:
             base = commands_dir
     except Exception:

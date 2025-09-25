@@ -2,7 +2,14 @@
 
 from __future__ import print_function
 
+import os
+import sys
+
 from Rhino.Commands import Result
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 from RhinoToSlicer.commands import send_to_prusa as _impl
 

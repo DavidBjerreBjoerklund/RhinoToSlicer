@@ -19,13 +19,15 @@ from typing import Optional
 
 HERE = Path(__file__).resolve().parent
 SRC_ROOT = HERE / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+PLUGIN_SOURCE = SRC_ROOT / "plugin"
+DEV_SOURCE = PLUGIN_SOURCE / "dev"
+
+if str(DEV_SOURCE) not in sys.path:
+    sys.path.insert(0, str(DEV_SOURCE))
 
 from RhinoToSlicer import PLUGIN_ID  # noqa: E402 - imported after sys.path tweak
 
 PLUGIN_DIRNAME = "RhinoToSlicer {{{}}}".format(PLUGIN_ID)
-DEV_SOURCE = SRC_ROOT / "RhinoToSlicer"
 CONFIG_FILENAME = "send_to_prusa_config.json"
 DEFAULT_VERSION = "8.0"
 _DEFAULT_MAC_PRUSA_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
@@ -84,7 +86,8 @@ def _prompt_for_prusa_path(existing: Optional[str]) -> Optional[str]:
 
 
 def _config_file_for(plugin_root: Path) -> Path:
-    return plugin_root / CONFIG_FILENAME
+    dev_dir = plugin_root / "dev"
+    return dev_dir / CONFIG_FILENAME if dev_dir.exists() or not plugin_root.exists() else plugin_root / CONFIG_FILENAME
 
 
 def _write_config(plugin_root: Path, prusa_path: str, *, dry_run: bool) -> None:
@@ -140,7 +143,7 @@ def _remove_existing(path: Path, *, dry_run: bool) -> None:
 
 
 def install_plugin(*, plugin_dir: Path, mode: str, dry_run: bool) -> Path:
-    source = DEV_SOURCE
+    source = PLUGIN_SOURCE
     if not source.exists():
         raise FileNotFoundError("Unable to locate dev files next to the installer")
 

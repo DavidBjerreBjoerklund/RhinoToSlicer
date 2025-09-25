@@ -2,6 +2,14 @@
 
 from __future__ import print_function
 
+import os
+import sys
+
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
 from RhinoToSlicer import PLUGIN_ID, __version__
 
 # Rhino expects the plug-in folder to include this identifier in its name.

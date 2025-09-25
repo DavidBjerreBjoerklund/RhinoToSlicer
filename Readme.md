@@ -27,8 +27,8 @@ the active model to the slicer.
    `%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns` on Windows or
    `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`
    on macOS), copies the packaged plug-in there, and prompts for the
-  PrusaSlicer executable. The chosen path is stored inside the plug-in folder
-  so future runs know where to launch the slicer from. Pass
+  PrusaSlicer executable. The chosen path is stored inside the plug-in's
+  `dev` folder so future runs know where to launch the slicer from. Pass
   `--prusa-path /absolute/path` if you prefer a non-interactive setup or
   `--no-prusa-config` to skip the prompt entirely. Use `--mode link` if you
   prefer a symlink for easier updates.
@@ -46,9 +46,9 @@ If you prefer not to run the installer, create a folder named
 plug-ins directory ( `%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns`
 on Windows or
 `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`
-on macOS). Copy the contents of `src/RhinoToSlicer/` directly into that folder.
-Launch Rhino, enable the plug-in if necessary, and run the `SendToPrusa`
-command once to store the PrusaSlicer path.
+on macOS). Copy the contents of `src/plugin/` into that folder so Rhino sees
+the expected `dev` subdirectory. Launch Rhino, enable the plug-in if necessary,
+and run the `SendToPrusa` command once to store the PrusaSlicer path.
 
 ## Usage
 

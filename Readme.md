@@ -27,11 +27,11 @@ the active model to the slicer.
    `%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns` on Windows or
    `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`
    on macOS), copies the packaged plug-in there, and prompts for the
-   PrusaSlicer executable. The chosen path is stored inside the plug-in folder
-   so future runs know where to launch the slicer from. Pass
-   `--prusa-path /absolute/path` if you prefer a non-interactive setup or
-   `--no-prusa-config` to skip the prompt entirely. Use `--mode link` if you
-   prefer a symlink for easier updates.
+  PrusaSlicer executable. The chosen path is stored inside the plug-in folder
+  so future runs know where to launch the slicer from. Pass
+  `--prusa-path /absolute/path` if you prefer a non-interactive setup or
+  `--no-prusa-config` to skip the prompt entirely. Use `--mode link` if you
+  prefer a symlink for easier updates.
 2. Start Rhino, open **Tools → Options → Plug-ins**, and ensure the
    *RhinoToSlicer* plug-in is enabled. You can now trigger the helper by typing
    the `SendToPrusa` command, binding it to a toolbar button, or calling it from
@@ -46,9 +46,9 @@ If you prefer not to run the installer, create a folder named
 plug-ins directory ( `%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns`
 on Windows or
 `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`
-on macOS). Inside that folder create a `dev` subdirectory and copy the contents
-of `src/RhinoToSlicer/` into it. Launch Rhino, enable the plug-in if necessary,
-and run the `SendToPrusa` command once to store the PrusaSlicer path.
+on macOS). Copy the contents of `src/RhinoToSlicer/` directly into that folder.
+Launch Rhino, enable the plug-in if necessary, and run the `SendToPrusa`
+command once to store the PrusaSlicer path.
 
 ## Usage
 
@@ -70,5 +70,5 @@ and run the `SendToPrusa` command once to store the PrusaSlicer path.
   Finder would.
 - Linux builds of Rhino are not officially supported, but the script will try
   to launch whichever executable path you provide.
-- The installer stores configuration in `send_to_prusa_config.json` next to the
-  helper script so that the slicer path persists across Rhino sessions.
+- The installer stores configuration in `send_to_prusa_config.json` inside the
+  plug-in folder so that the slicer path persists across Rhino sessions.

@@ -25,9 +25,7 @@ if str(SRC_ROOT) not in sys.path:
 from RhinoToSlicer import PLUGIN_ID  # noqa: E402 - imported after sys.path tweak
 
 PLUGIN_DIRNAME = "RhinoToSlicer {{{}}}".format(PLUGIN_ID)
-DEV_DIRNAME = "dev"
 DEV_SOURCE = SRC_ROOT / "RhinoToSlicer"
-COMMAND_RELATIVE_PATH = Path("RhinoToSlicer") / "commands" / "send_to_prusa.py"
 CONFIG_FILENAME = "send_to_prusa_config.json"
 DEFAULT_VERSION = "8.0"
 _DEFAULT_MAC_PRUSA_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
@@ -85,12 +83,14 @@ def _prompt_for_prusa_path(existing: Optional[str]) -> Optional[str]:
     return normalized
 
 
-def _config_file_for(destination: Path) -> Path:
-    return destination.with_name(CONFIG_FILENAME)
+def _config_file_for(plugin_root: Path) -> Path:
+    return plugin_root / CONFIG_FILENAME
 
 
-def _write_config(destination: Path, prusa_path: str, *, dry_run: bool) -> None:
-    config_path = _config_file_for(destination)
+def _write_config(plugin_root: Path, prusa_path: str, *, dry_run: bool) -> None:
+    config_path = _config_file_for(plugin_root)
+    if not dry_run:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"prusa_path": prusa_path}
     if dry_run:
         print(f"Would store PrusaSlicer path in {config_path}")
@@ -99,8 +99,8 @@ def _write_config(destination: Path, prusa_path: str, *, dry_run: bool) -> None:
     print(f"Stored PrusaSlicer path in {config_path}")
 
 
-def _load_existing_config(destination: Path) -> Optional[str]:
-    config_path = _config_file_for(destination)
+def _load_existing_config(plugin_root: Path) -> Optional[str]:
+    config_path = _config_file_for(plugin_root)
     if not config_path.exists():
         return None
     try:
@@ -111,46 +111,32 @@ def _load_existing_config(destination: Path) -> Optional[str]:
     return _normalize_prusa_path(path) if path else None
 
 
-def _configure_prusa_path(destination: Path, provided: Optional[str], *, dry_run: bool) -> None:
+def _configure_prusa_path(plugin_root: Path, provided: Optional[str], *, dry_run: bool) -> None:
     normalized = _normalize_prusa_path(provided) if provided else None
     if provided and not normalized:
         print(f"Ignoring invalid PrusaSlicer path: {provided}")
     if not normalized:
-        existing = _load_existing_config(destination)
+        existing = _load_existing_config(plugin_root)
         if not existing and sys.platform == "darwin":
             existing = _normalize_prusa_path(_DEFAULT_MAC_PRUSA_PATH)
         normalized = _prompt_for_prusa_path(existing)
     if not normalized:
         print("PrusaSlicer path not stored. You can run the installer again with --prusa-path.")
         return
-    _write_config(destination, normalized, dry_run=dry_run)
+    _write_config(plugin_root, normalized, dry_run=dry_run)
 
 
-def _copy_or_link(source: Path, destination: Path, *, mode: str, dry_run: bool) -> None:
-    if destination.exists() or destination.is_symlink():
-        if dry_run:
-            action = "would replace"
-        else:
-            if destination.is_dir() and not destination.is_symlink():
-                shutil.rmtree(destination)
-            else:
-                destination.unlink()
-            action = "replaced"
-        print(f"Existing {destination} {action}.")
-
-    if dry_run:
-        print(f"Would {mode} {source} -> {destination}")
+def _remove_existing(path: Path, *, dry_run: bool) -> None:
+    if not (path.exists() or path.is_symlink()):
         return
-
-    if mode == "copy":
-        if source.is_dir():
-            shutil.copytree(source, destination)
-        else:
-            shutil.copy2(source, destination)
+    if dry_run:
+        print(f"Would remove existing {path}.")
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
     else:
-        destination.symlink_to(source, target_is_directory=source.is_dir())
-
-    print(f"Installed {destination} ({mode}).")
+        path.unlink()
+    print(f"Removed existing {path}.")
 
 
 def install_plugin(*, plugin_dir: Path, mode: str, dry_run: bool) -> Path:
@@ -160,9 +146,30 @@ def install_plugin(*, plugin_dir: Path, mode: str, dry_run: bool) -> Path:
 
     plugin_dir.mkdir(parents=True, exist_ok=True)
     plugin_root = plugin_dir / PLUGIN_DIRNAME
-    dev_destination = plugin_root / DEV_DIRNAME
-    _copy_or_link(source, dev_destination, mode=mode, dry_run=dry_run)
-    return dev_destination / COMMAND_RELATIVE_PATH
+
+    _remove_existing(plugin_root, dry_run=dry_run)
+
+    if dry_run:
+        print(f"Would {mode} {source} -> {plugin_root}")
+        return plugin_root
+
+    if mode == "copy":
+        shutil.copytree(source, plugin_root)
+    else:
+        plugin_root.mkdir(parents=True, exist_ok=True)
+        for item in source.iterdir():
+            target = plugin_root / item.name
+            if target.exists() or target.is_symlink():
+                if target.is_dir() and not target.is_symlink():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            if item.is_dir():
+                target.symlink_to(item, target_is_directory=True)
+            else:
+                target.symlink_to(item)
+    print(f"Installed {plugin_root} ({mode}).")
+    return plugin_root
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -226,7 +233,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"Target Rhino Python plug-in directory: {plugin_dir}")
 
     try:
-        destination = install_plugin(plugin_dir=plugin_dir, mode=args.mode, dry_run=args.dry_run)
+        plugin_root = install_plugin(plugin_dir=plugin_dir, mode=args.mode, dry_run=args.dry_run)
     except Exception as exc:  # pragma: no cover - installer level error
         print(f"Installation failed: {exc}")
         return 1
@@ -236,7 +243,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         if args.dry_run and not args.prusa_path:
             print("Skipping PrusaSlicer path prompt during dry run.")
         else:
-            _configure_prusa_path(destination, args.prusa_path, dry_run=args.dry_run)
+            _configure_prusa_path(plugin_root, args.prusa_path, dry_run=args.dry_run)
 
     if args.dry_run:
         print("Dry run complete. No files were modified.")

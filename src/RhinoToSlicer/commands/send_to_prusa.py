@@ -61,7 +61,12 @@ def _normalize_prusa_path(path):
 
 def _config_path():
     try:
-        base = os.path.dirname(os.path.abspath(__file__))
+        commands_dir = os.path.dirname(os.path.abspath(__file__))
+        plugin_root = os.path.dirname(commands_dir)
+        if plugin_root and os.path.isdir(plugin_root):
+            base = plugin_root
+        else:
+            base = commands_dir
     except Exception:
         base = tempfile.gettempdir()
     return os.path.join(base, _CONFIG_FILENAME)
@@ -84,6 +89,9 @@ def _store_configured_path(path):
     config_path = _config_path()
     payload = json.dumps({"prusa_path": path}, indent=2)
     try:
+        directory = os.path.dirname(config_path)
+        if directory and not os.path.isdir(directory):
+            os.makedirs(directory)
         with open(config_path, "wb") as handle:
             handle.write(payload.encode("utf-8"))
     except IOError:

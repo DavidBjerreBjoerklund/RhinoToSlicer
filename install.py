@@ -7,14 +7,14 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 SCRIPT_NAME = "send_to_prusa.py"
+SET_PATH_SCRIPT_NAME = "send_to_prusa_set_path.py"
 PLUGIN_ENTRY_NAME = "__plugin__.py"
 PLUGIN_DIR_NAME = "SendToPrusa"
 CONFIG_FILENAME = "send_to_prusa_config.json"
 ALIAS_NAME = "SendToPrusa"
-ALIAS_MACRO = "! _SendToPrusa"
 DEFAULT_VERSION = "8.0"
 
 
@@ -108,6 +108,11 @@ def _alias_file(user_dir: Path) -> Path:
     return user_dir / "settings" / "aliases.txt"
 
 
+def _build_run_python_macro(script_path: Path) -> str:
+    quoted = script_path.as_posix()
+    return f'! _-RunPythonScript ("{quoted}")'
+
+
 def _ensure_alias(user_dir: Path, alias: str, macro: str, *, dry_run: bool) -> bool:
     alias_path = _alias_file(user_dir)
     alias_path.parent.mkdir(parents=True, exist_ok=True)
@@ -174,16 +179,18 @@ def _copy_or_link(source: Path, destination: Path, *, mode: str, dry_run: bool) 
     print(f"Installed {destination} ({mode}).")
 
 
-def install_plugin_bundle(*, plugin_dir: Path, mode: str, dry_run: bool) -> Path:
+def install_plugin_bundle(*, plugin_dir: Path, mode: str, dry_run: bool) -> Dict[str, Path]:
     source_root = Path(__file__).resolve().parent / "src"
     plugin_dir.mkdir(parents=True, exist_ok=True)
-    for filename in (SCRIPT_NAME, PLUGIN_ENTRY_NAME):
+    installed: Dict[str, Path] = {}
+    for filename in (SCRIPT_NAME, SET_PATH_SCRIPT_NAME, PLUGIN_ENTRY_NAME):
         source = source_root / filename
         if not source.exists():
             raise FileNotFoundError(f"Unable to locate {filename} next to the installer")
         destination = plugin_dir / filename
         _copy_or_link(source, destination, mode=mode, dry_run=dry_run)
-    return plugin_dir / SCRIPT_NAME
+        installed[filename] = destination
+    return installed
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -254,35 +261,54 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"Target Rhino plug-in directory: {plugin_dir}")
 
     try:
-        destination = install_plugin_bundle(plugin_dir=plugin_dir, mode=args.mode, dry_run=args.dry_run)
+        installed_files = install_plugin_bundle(
+            plugin_dir=plugin_dir, mode=args.mode, dry_run=args.dry_run
+        )
     except Exception as exc:  # pragma: no cover - installer level error
         print(f"Installation failed: {exc}")
         return 1
+
+    send_script = installed_files[SCRIPT_NAME]
+    configure_script = installed_files[SET_PATH_SCRIPT_NAME]
 
     configure_prusa = args.configure_prusa or bool(args.prusa_path)
     if configure_prusa:
         if args.dry_run and not args.prusa_path:
             print("Skipping PrusaSlicer path prompt during dry run.")
         else:
-            _configure_prusa_path(destination, args.prusa_path, dry_run=args.dry_run)
+            _configure_prusa_path(send_script, args.prusa_path, dry_run=args.dry_run)
 
-    alias_configured = True
+    alias_results: List[bool] = []
     if not args.no_alias:
-        alias_configured = _ensure_alias(user_dir, args.alias_name, ALIAS_MACRO, dry_run=args.dry_run)
+        send_macro = _build_run_python_macro(send_script)
+        alias_results.append(
+            _ensure_alias(user_dir, args.alias_name, send_macro, dry_run=args.dry_run)
+        )
+        configure_alias = f"{args.alias_name}SetPath"
+        configure_macro = _build_run_python_macro(configure_script)
+        alias_results.append(
+            _ensure_alias(user_dir, configure_alias, configure_macro, dry_run=args.dry_run)
+        )
+    alias_configured = all(alias_results) if alias_results else True
 
     if args.dry_run:
         print("Dry run complete. No files were modified.")
     else:
         print("Installation complete.")
         if args.no_alias:
-            print("Add a button or alias manually with:\n! _SendToPrusa")
+            print(
+                "Add toolbar buttons or aliases manually with:\n"
+                f"! _-RunPythonScript (\"{send_script.as_posix()}\")\n"
+                f"! _-RunPythonScript (\"{configure_script.as_posix()}\")"
+            )
         elif alias_configured:
             print(
-                f"Rhino alias '{args.alias_name}' now maps to the SendToPrusa command. Assign it to a toolbar button or run it directly."
+                f"Rhino aliases '{args.alias_name}' and '{args.alias_name}SetPath' now execute the plug-in scripts."
             )
         else:
             print(
-                f"Unable to update Rhino's alias list automatically. Add '{args.alias_name}' manually with:\n{ALIAS_MACRO}"
+                "Unable to update Rhino's alias list automatically. Add the following manually:\n"
+                f"{send_macro}\n{configure_macro}"
             )
         print(
             "Load the plug-in from Rhino's Plug-in manager if it isn't detected automatically and run 'SendToPrusaSetPath' to update the slicer path."

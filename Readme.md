@@ -27,15 +27,16 @@ active model to the slicer.
    The script locates your Rhino 8 user data folder (e.g.
    `%AppData%\McNeel\Rhinoceros\8.0` on Windows or
    `~/Library/Application Support/McNeel/Rhinoceros/8.0` on macOS), copies the
-   plug-in files (`send_to_prusa.py` and `__plugin__.py`) into
-   `Plug-ins/PythonPlugIns/SendToPrusa`, and prompts for the PrusaSlicer
+   plug-in files (`send_to_prusa.py`, `send_to_prusa_set_path.py`, and
+   `__plugin__.py`) into `Plug-ins/PythonPlugIns/SendToPrusa`, and prompts for the PrusaSlicer
    executable. Pass `--prusa-path /absolute/path` for a non-interactive setup or
    `--no-prusa-config` to skip the prompt entirely. Use `--mode link` if you
    prefer a symlink for easier updates.
-2. The installer also configures a Rhino alias named `SendToPrusa` that points
-   at the `SendToPrusa` command. Assign it to a toolbar button or run the
-   command directly from Rhino's command line. Use the companion command
-   `SendToPrusaSetPath` later if you need to change the slicer location.
+2. The installer also configures Rhino aliases named `SendToPrusa` and
+   `SendToPrusaSetPath` that call the plug-in scripts via `RunPythonScript`.
+   That makes the workflow available immediately—even if Rhino has not detected
+   the plug-in yet—and you can wire those aliases to toolbar buttons or run
+   them from Rhino's command line.
 3. Rhino should detect the plug-in automatically at the next launch. If it
    doesn't, open _Rhino Options → Plug-ins → Python → Install…_ and select the
    `Plug-ins/PythonPlugIns/SendToPrusa` folder. The plug-in appears in the list
@@ -43,17 +44,23 @@ active model to the slicer.
 
 ### Manual install
 
-If you prefer not to run the installer, copy `src/send_to_prusa.py` and
-`src/__plugin__.py` to your Rhino Python plug-in directory
-(`%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns\SendToPrusa` or
-`~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns/SendToPrusa`).
+If you prefer not to run the installer, copy `src/send_to_prusa.py`,
+`src/send_to_prusa_set_path.py`, and `src/__plugin__.py` to your Rhino Python
+plug-in directory (`%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns\SendToPrusa`
+or `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns/SendToPrusa`).
 Launch Rhino, ensure the plug-in is loaded, and run:
 ```
 SendToPrusaSetPath
 ```
 to store the PrusaSlicer path. The first execution of `SendToPrusa` registers
 the matching Rhino alias so you can wire a toolbar button the same way as with
-the installer.
+the installer. You can also add aliases manually with the macros below if you
+skip the installer entirely:
+```
+! _-RunPythonScript ("/absolute/path/to/Plug-ins/PythonPlugIns/SendToPrusa/send_to_prusa.py")
+! _-RunPythonScript ("/absolute/path/to/Plug-ins/PythonPlugIns/SendToPrusa/send_to_prusa_set_path.py")
+```
+Adjust the paths to match the location where you copied the scripts.
 
 ## Usage
 

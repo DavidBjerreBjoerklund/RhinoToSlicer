@@ -28,6 +28,7 @@ _MAC_APP_SUFFIX = ".app"
 _MAC_APP_EXECUTABLE = os.path.join("Contents", "MacOS", "PrusaSlicer")
 _CONFIG_FILENAME = "send_to_prusa_config.json"
 _ALIAS_NAME = "SendToPrusa"
+SET_PATH_COMMAND_NAME = f"{_ALIAS_NAME}SetPath"
 _ALIAS_MACRO = '! _SendToPrusa'
 
 

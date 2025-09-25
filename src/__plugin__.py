@@ -25,7 +25,7 @@ __plugin_description__ = "Export selected Rhino geometry to PrusaSlicer."
 
 _PLUGIN_GUID = System.Guid(__plugin_id__)
 _SEND_ALIAS = send_to_prusa._ALIAS_NAME  # reuse the shared command name
-_CONFIGURE_COMMAND = f"{_SEND_ALIAS}SetPath"
+_CONFIGURE_COMMAND = send_to_prusa.SET_PATH_COMMAND_NAME
 
 
 class RhinoToPrusaPlugIn(Rhino.PlugIns.PlugIn):

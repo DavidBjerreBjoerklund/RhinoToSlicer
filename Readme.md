@@ -1,61 +1,64 @@
 # Rhino to PrusaSlicer bridge
 
-This repository contains a small Rhino Python helper that exports the current
-selection as a STEP file and opens it inside [PrusaSlicer](https://www.prusa3d.com/page/prusaslicer_424/).
-It is intended to be attached to a toolbar button so that a single click sends
+This repository contains a packaged Rhino Python plug-in that exports the
+current selection as a STEP file and opens it inside
+[PrusaSlicer](https://www.prusa3d.com/page/prusaslicer_424/). Once installed,
+the plug-in adds a `Slice` command to Rhino so a single click can send
 the active model to the slicer.
 
 ## Features
 
 - Prompts for geometry if nothing is pre-selected.
 - Remembers the PrusaSlicer executable path using Rhino's sticky dictionary or
-  the `PRUSA_SLICER_PATH` environment variable.
+  the `PRUSA_SLICER_PATH` environment variable and records the detected Rhino
+  version for troubleshooting.
 - Exports selected objects to a temporary `.step` file using Rhino's native
-  exporter.
+  exporter, naming the file after the current Rhino document when available and
+  overwriting previous exports automatically.
 - Launches PrusaSlicer with the exported file as an argument.
 
 ## Installation
 
-### Quick installer (Rhino 8)
+### Quick installer (Rhino 7+)
 
 1. Run the installer from a terminal:
    ```
    python3 install.py
    ```
-   The script locates your Rhino 8 *scripts* directory (e.g.
-   `%AppData%\McNeel\Rhinoceros\8.0\scripts` on Windows or
-   `~/Library/Application Support/McNeel/Rhinoceros/8.0/scripts` on macOS),
-   copies `send_to_prusa.py` there, and prompts for the PrusaSlicer executable.
-   The chosen path is stored next to the helper so future runs know where to
-   launch the slicer. Pass `--prusa-path /absolute/path` if you prefer a
-   non-interactive setup or `--no-prusa-config` to skip the prompt entirely.
-   Use `--mode link` if you prefer a symlink for easier updates.
-2. The installer also configures a Rhino command alias named `SendToPrusa`. You
-   can trigger the helper by typing that command, assigning it to a toolbar
-   button, or calling it from macros. For example, set a button's left click to
-   `SendToPrusa` and the right click to:
-   ```
-   ! _-RunPythonScript ("import send_to_prusa; send_to_prusa.set_prusaslicer_path()")
-   ```
+   The script scans standard install locations (e.g.
+   `C:\Program Files\Rhino 7` on Windows or `/Applications/Rhino 8.app` on
+   macOS) to confirm which Rhino builds are present, then targets the newest
+   matching *Python plug-ins* directory automatically (such as
+   `%AppData%\McNeel\Rhinoceros\7.0\Plug-ins\PythonPlugIns` or
+   `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`).
+   It copies the packaged plug-in there and prompts for the PrusaSlicer
+   executable. The chosen path is stored inside the plug-in's `dev` folder so
+   future runs know where to launch the slicer from. Pass
+   `--prusa-path /absolute/path` if you prefer a non-interactive setup or
+   `--no-prusa-config` to skip the prompt entirely. Use `--mode link` if you
+   prefer a symlink for easier updates.
+2. Start Rhino, open **Tools → Options → Plug-ins**, and ensure the
+   *RhinoToSlicer* plug-in is enabled. You can now trigger the helper by typing
+   the `Slice` command, binding it to a toolbar button, or calling it from
+   macros. On first launch Rhino may need to load Python support before the
+   command appears; running `EditPythonScript` once forces Rhino to refresh the
+   plug-in cache.
 
 ### Manual install
 
-If you prefer not to run the installer, copy `src/send_to_prusa.py` to your
-Rhino scripts directory manually (`%AppData%\McNeel\Rhinoceros\8.0\scripts`
-or `~/Library/Application Support/McNeel/Rhinoceros/8.0/scripts`). Launch Rhino
-and run:
-```
-_-RunPythonScript ("import send_to_prusa; send_to_prusa.set_prusaslicer_path()")
-```
-to store the PrusaSlicer path. The first execution of
-`send_to_prusa.send_to_prusaslicer()` (or the `SendToPrusa` command) will add the
-matching Rhino alias so you can wire a toolbar button the same way as with the
-installer.
+If you prefer not to run the installer, create a folder named
+`RhinoToSlicer {2e965250-8f1e-4e55-8b02-01c0924325b8}` in your Rhino Python
+plug-ins directory (for example
+`%AppData%\McNeel\Rhinoceros\7.0\Plug-ins\PythonPlugIns` on Windows or
+`~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`
+on macOS). Copy the contents of `src/plugin/` into that folder so Rhino sees
+the expected `dev` subdirectory. Launch Rhino, enable the plug-in if necessary,
+and run the `Slice` command once to store the PrusaSlicer path.
 
 ## Usage
 
 1. Select the geometry you want to slice.
-2. Click the toolbar button or run the `SendToPrusa` command/alias configured
+2. Click the toolbar button or run the `Slice` command/alias configured
    during installation.
 3. Rhino writes the selection to a temporary STEP file and starts PrusaSlicer
    with that file. The exported files are left in your temporary folder so you
@@ -65,10 +68,15 @@ installer.
 
 - STEP export requires Rhino's standard STEP plug-in to be installed and
   licensed. If exporting fails, check the Rhino command line for details.
-- On macOS, choose the `PrusaSlicer.app` bundle when prompted (or use the
-  bundle path in `PRUSA_SLICER_PATH`). The script uses the `open -a` helper so
-  that Rhino for Mac launches the application the same way Finder would.
+- On macOS, the installer defaults to
+  `/Applications/Original Prusa Drivers/PrusaSlicer.app`. Choose that bundle
+  when prompted (or set the path via `PRUSA_SLICER_PATH`). The plug-in uses the
+  `open -a` helper so Rhino for Mac launches the application the same way
+  Finder would.
 - Linux builds of Rhino are not officially supported, but the script will try
   to launch whichever executable path you provide.
-- The installer stores configuration in `send_to_prusa_config.json` next to the
-  helper script so that the slicer path persists across Rhino sessions.
+- The installer stores configuration in `slicer_config.json` inside the
+  plug-in folder so that the slicer path persists across Rhino sessions.
+- The command exposes a `RhinoToSlicer.commands.detect_rhino_version()` helper
+  that reports the running Rhino build and prints it the first time the plug-in
+  runs during a session.

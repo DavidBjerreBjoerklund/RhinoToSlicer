@@ -33,7 +33,7 @@ class RhinoToPrusaPlugIn(Rhino.PlugIns.PlugIn):
     instance = None
 
     def __init__(self):
-        super().__init__()
+        Rhino.PlugIns.PlugIn.__init__(self)
         RhinoToPrusaPlugIn.instance = self
 
     @property
@@ -60,7 +60,7 @@ class SendToPrusaCommand(Rhino.Commands.Command):
     instance = None
 
     def __init__(self):
-        super().__init__()
+        Rhino.Commands.Command.__init__(self)
         SendToPrusaCommand.instance = self
 
     def EnglishName(self):  # pragma: no cover - Rhino callback
@@ -78,7 +78,7 @@ class ConfigurePrusaPathCommand(Rhino.Commands.Command):
     instance = None
 
     def __init__(self):
-        super().__init__()
+        Rhino.Commands.Command.__init__(self)
         ConfigurePrusaPathCommand.instance = self
 
     def EnglishName(self):  # pragma: no cover - Rhino callback

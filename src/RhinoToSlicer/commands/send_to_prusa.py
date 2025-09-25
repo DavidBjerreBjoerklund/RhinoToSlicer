@@ -4,6 +4,10 @@ This module provides helper functions that can be executed from Rhino's Python
 script editor or bound to toolbar buttons. The main entry point is the
 ``send_to_prusaslicer`` function which exports the current selection to a
 STEP file and launches PrusaSlicer with the exported model.
+
+The module also defines the :class:`SendToPrusaCommand` class so the packaged
+plug-in can register a real Rhino command that appears in the command line and
+plug-in manager, matching Rhino's preferred Python plug-in structure.
 """
 from __future__ import print_function
 
@@ -18,6 +22,7 @@ import Rhino
 import rhinoscriptsyntax as rs
 import scriptcontext as sc
 import System
+from Rhino.Commands import Result
 
 
 _PRUSA_PATH_KEY = "RhinoToSlicer::PrusaPath"
@@ -200,13 +205,13 @@ def send_to_prusaslicer():
     )
     if not objects:
         print("No geometry selected.")
-        return Rhino.Commands.Result.Cancel
+        return Result.Cancel
 
     prusa_path = _load_prusaslicer_path()
     if not prusa_path:
         prusa_path = set_prusaslicer_path()
     if not prusa_path:
-        return Rhino.Commands.Result.Cancel
+        return Result.Cancel
 
     export_path = _create_temp_export_path()
 
@@ -219,16 +224,34 @@ def send_to_prusaslicer():
             except OSError:
                 pass
         print("Export failed. Check that the STEP exporter is installed and licensed.")
-        return Rhino.Commands.Result.Failure
+        return Result.Failure
 
     try:
         _launch_prusaslicer(prusa_path, export_path)
     except RuntimeError as exc:
         print(str(exc))
-        return Rhino.Commands.Result.Failure
+        return Result.Failure
 
     print("Exported {} objects to {} and launched PrusaSlicer.".format(len(objects), export_path))
-    return Rhino.Commands.Result.Success
+    return Result.Success
+
+
+class SendToPrusaCommand(Rhino.Commands.Command):
+    """Rhino command wrapper that executes :func:`send_to_prusaslicer`."""
+
+    def __init__(self):
+        Rhino.Commands.Command.__init__(self)
+
+    def EnglishName(self):  # noqa: N802 - Rhino API camelCase requirement
+        return _COMMAND_NAME
+
+    def RunCommand(self, doc, mode):  # noqa: N802 - Rhino API camelCase requirement
+        result = send_to_prusaslicer()
+        return result if isinstance(result, Result) else Result.Success
+
+
+# Instantiate the command so Rhino registers it when the plug-in loads.
+_command_instance = SendToPrusaCommand()
 
 
 __commandname__ = _COMMAND_NAME

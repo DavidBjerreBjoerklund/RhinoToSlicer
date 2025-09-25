@@ -3,8 +3,8 @@
 
 Running this script copies (or links) the packaged Rhino Python plug-in into
 Rhino's ``PythonPlugIns`` directory so the ``Slice`` command appears in the
-plug-in manager. It can be driven from the command line or via a simple
-graphical interface that helps select the Rhino version and PrusaSlicer path.
+plug-in manager. The workflow is entirely command-line driven to avoid relying
+on the deprecated system ``Tk`` runtime shipped with macOS.
 """
 from __future__ import annotations
 
@@ -246,18 +246,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--prusa-path",
         help="Set the PrusaSlicer executable path non-interactively (overrides the interactive prompt).",
     )
-    parser.add_argument(
-        "--gui",
-        action="store_true",
-        help="Launch the graphical installer UI.",
-    )
-    parser.add_argument(
-        "--no-gui",
-        dest="gui",
-        action="store_false",
-        help="Force the command-line installer even if GUI conditions are met.",
-    )
-    parser.set_defaults(gui=None)
     parser.set_defaults(configure_prusa=True)
     return parser.parse_args(argv)
 
@@ -294,140 +282,8 @@ def _perform_install(
     return plugin_root, stored_path
 
 
-def launch_gui(argv: Optional[list[str]] = None) -> int:
-    try:
-        import tkinter as tk
-        from tkinter import filedialog, messagebox, ttk
-    except ImportError:
-        print("Tkinter is not available in this Python environment. Falling back to CLI.")
-        return 1
-
-    versions = _list_installed_versions()
-    if not versions:
-        versions = [DEFAULT_VERSION]
-
-    class InstallerApp:
-        def __init__(self, root):
-            self.root = root
-            root.title("RhinoToSlicer Installer")
-
-            self.version_var = tk.StringVar(value=versions[-1])
-            self.mode_var = tk.StringVar(value="copy")
-            default_prusa = _normalize_prusa_path(_DEFAULT_MAC_PRUSA_PATH) if sys.platform == "darwin" else ""
-            self.prusa_var = tk.StringVar(value=default_prusa or "")
-            self.status_var = tk.StringVar()
-
-            main = ttk.Frame(root, padding=12)
-            main.grid(column=0, row=0, sticky="nsew")
-            root.columnconfigure(0, weight=1)
-            root.rowconfigure(0, weight=1)
-
-            ttk.Label(main, text="Rhino version:").grid(column=0, row=0, sticky="w")
-            self.version_combo = ttk.Combobox(main, textvariable=self.version_var, values=versions, state="readonly")
-            self.version_combo.grid(column=1, row=0, sticky="ew", padx=(4, 0))
-            main.columnconfigure(1, weight=1)
-
-            ttk.Label(main, text="Install mode:").grid(column=0, row=1, sticky="w", pady=(8, 0))
-            mode_frame = ttk.Frame(main)
-            mode_frame.grid(column=1, row=1, sticky="w", pady=(8, 0))
-            ttk.Radiobutton(mode_frame, text="Copy", value="copy", variable=self.mode_var).pack(side=tk.LEFT)
-            ttk.Radiobutton(mode_frame, text="Link", value="link", variable=self.mode_var).pack(side=tk.LEFT, padx=(8, 0))
-
-            ttk.Label(main, text="PrusaSlicer path:").grid(column=0, row=2, sticky="w", pady=(8, 0))
-            path_frame = ttk.Frame(main)
-            path_frame.grid(column=1, row=2, sticky="ew", pady=(8, 0))
-            path_frame.columnconfigure(0, weight=1)
-            self.prusa_entry = ttk.Entry(path_frame, textvariable=self.prusa_var)
-            self.prusa_entry.grid(column=0, row=0, sticky="ew")
-            ttk.Button(path_frame, text="Browse…", command=self.browse_prusa).grid(column=1, row=0, padx=(4, 0))
-
-            self.configure_var = tk.BooleanVar(value=True)
-            ttk.Checkbutton(
-                main,
-                text="Store PrusaSlicer path",
-                variable=self.configure_var,
-            ).grid(column=1, row=3, sticky="w", pady=(4, 0))
-
-            self.log = tk.Text(main, width=60, height=10, state="disabled")
-            self.log.grid(column=0, row=4, columnspan=2, pady=(12, 0), sticky="nsew")
-            main.rowconfigure(4, weight=1)
-
-            button_frame = ttk.Frame(main)
-            button_frame.grid(column=0, row=5, columnspan=2, pady=(12, 0), sticky="e")
-            ttk.Button(button_frame, text="Install", command=self.install).pack(side=tk.RIGHT)
-            ttk.Button(button_frame, text="Close", command=root.destroy).pack(side=tk.RIGHT, padx=(0, 8))
-
-        def log_message(self, message: str):
-            self.log.configure(state="normal")
-            self.log.insert("end", message + "\n")
-            self.log.see("end")
-            self.log.configure(state="disabled")
-
-        def browse_prusa(self):
-            if sys.platform == "darwin":
-                path = filedialog.askopenfilename(title="Locate PrusaSlicer", filetypes=[("Applications", "PrusaSlicer.app")])
-            elif sys.platform.startswith("win"):
-                path = filedialog.askopenfilename(title="Locate PrusaSlicer", filetypes=[("Executable", "PrusaSlicer.exe")])
-            else:
-                path = filedialog.askopenfilename(title="Locate PrusaSlicer")
-            if path:
-                normalized = _normalize_prusa_path(path)
-                if normalized:
-                    self.prusa_var.set(normalized)
-                else:
-                    messagebox.showerror("Invalid Path", "The selected file is not a valid PrusaSlicer executable.")
-
-        def install(self):
-            version = self.version_var.get() or DEFAULT_VERSION
-            mode = self.mode_var.get() or "copy"
-            prusa_path = self.prusa_var.get().strip() or None
-            configure = self.configure_var.get()
-
-            target_dir = _detect_rhino_python_plugin_dir(version)
-            self.log_message(f"Installing for Rhino {version} in {target_dir}")
-
-            try:
-                plugin_root, stored_path = _perform_install(
-                    version=version,
-                    mode=mode,
-                    plugins_dir=None,
-                    prusa_path=prusa_path,
-                    configure_prusa=configure,
-                    dry_run=False,
-                )
-            except Exception as exc:  # pragma: no cover - GUI feedback
-                self.log_message(f"Installation failed: {exc}")
-                messagebox.showerror("Installation failed", str(exc))
-                return
-
-            self.log_message(f"Installed plug-in to {plugin_root}")
-            if stored_path:
-                self.prusa_var.set(stored_path)
-            messagebox.showinfo(
-                "Installation complete",
-                "Installation complete. Launch Rhino and enable the RhinoToSlicer plug-in if it does not load automatically.",
-            )
-
-    root = tk.Tk()
-    app = InstallerApp(root)
-    root.mainloop()
-    return 0
-
-
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
-
-    use_gui = None
-    if args.gui is None:
-        use_gui = not argv and sys.stdout.isatty()
-    else:
-        use_gui = args.gui
-
-    if use_gui:
-        result = launch_gui(argv)
-        if result == 0:
-            return 0
-        # GUI unavailable; fall through to CLI installer.
 
     if args.scripts_dir:
         print(

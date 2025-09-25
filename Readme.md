@@ -24,20 +24,15 @@ the active model to the slicer.
    ```
    python3 install.py
    ```
-   When launched without arguments the installer opens a graphical helper that
-   detects your Rhino user folders, lets you pick an install mode (copy or
-   symlink), and stores the PrusaSlicer location. Close the window or run the
-   script with `--no-gui` to fall back to the command-line workflow.
-
-   In command-line mode the script locates the newest Rhino *Python plug-ins*
-   directory automatically (e.g. `%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\`
-   `PythonPlugIns` on Windows or `~/Library/Application Support/McNeel/
-   Rhinoceros/8.0/Plug-ins/PythonPlugIns` on macOS), copies the packaged
-   plug-in there, and prompts for the PrusaSlicer executable. The chosen path is
-   stored inside the plug-in's `dev` folder so future runs know where to launch
-   the slicer from. Pass `--prusa-path /absolute/path` if you prefer a
-   non-interactive setup or `--no-prusa-config` to skip the prompt entirely.
-   Use `--mode link` if you prefer a symlink for easier updates.
+   The script locates the newest Rhino *Python plug-ins* directory automatically
+   (e.g. `%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns` on Windows or
+   `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`
+   on macOS), copies the packaged plug-in there, and prompts for the
+   PrusaSlicer executable. The chosen path is stored inside the plug-in's `dev`
+   folder so future runs know where to launch the slicer from. Pass
+   `--prusa-path /absolute/path` if you prefer a non-interactive setup or
+   `--no-prusa-config` to skip the prompt entirely. Use `--mode link` if you
+   prefer a symlink for easier updates.
 2. Start Rhino, open **Tools → Options → Plug-ins**, and ensure the
    *RhinoToSlicer* plug-in is enabled. You can now trigger the helper by typing
    the `Slice` command, binding it to a toolbar button, or calling it from

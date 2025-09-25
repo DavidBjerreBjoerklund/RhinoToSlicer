@@ -1,0 +1,385 @@
+"""Send selected Rhino geometry to PrusaSlicer.
+
+This module contains the implementation behind the ``Slice`` Rhino command.
+The helper functions can also be imported directly from Rhino's Python editor
+or legacy macros via the compatibility shim.
+"""
+from __future__ import print_function
+
+import json
+import os
+import subprocess
+import tempfile
+from contextlib import contextmanager
+import re
+
+import Rhino
+import rhinoscriptsyntax as rs
+import scriptcontext as sc
+import System
+from Rhino.Commands import Result
+
+
+_PRUSA_PATH_KEY = "RhinoToSlicer::PrusaPath"
+_ENV_PATH_KEY = "PRUSA_SLICER_PATH"
+_DEFAULT_EXTENSION = ".step"
+_MAC_APP_SUFFIX = ".app"
+_MAC_APP_EXECUTABLE = os.path.join("Contents", "MacOS", "PrusaSlicer")
+_CONFIG_FILENAME = "slicer_config.json"
+_RHINO_VERSION_STICKY_KEY = "RhinoToSlicer::RhinoVersion"
+_RHINO_VERSION_LOG_KEY = "RhinoToSlicer::RhinoVersionNotified"
+COMMAND_NAME = "Slice"
+_DEFAULT_MAC_APP_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
+_VERSION_CACHE = None
+
+
+def _detect_rhino_version_info():
+    try:
+        app = Rhino.RhinoApp
+    except Exception:
+        return None
+
+    try:
+        major = getattr(app, "ExeVersion")
+    except Exception:
+        major = None
+
+    try:
+        service_release = getattr(app, "ExeServiceRelease")
+    except Exception:
+        service_release = None
+
+    try:
+        candidate = getattr(app, "ExeServiceReleaseCandidate")
+    except Exception:
+        candidate = None
+
+    if major is None:
+        try:
+            text = str(getattr(app, "Version"))
+        except Exception:
+            text = None
+    else:
+        detail = None
+        if candidate and candidate > 0:
+            detail = "RC{}".format(candidate)
+        elif service_release is not None and service_release >= 0:
+            detail = "SR{}".format(service_release)
+
+        if detail:
+            text = "{} {}".format(major, detail)
+        else:
+            text = str(major)
+
+    return {
+        "major": major,
+        "service_release": service_release,
+        "service_release_candidate": candidate,
+        "text": text,
+    }
+
+
+def detect_rhino_version():
+    global _VERSION_CACHE
+    if _VERSION_CACHE is not None:
+        return _VERSION_CACHE
+
+    info = _detect_rhino_version_info()
+    if info:
+        _VERSION_CACHE = info
+        try:
+            sc.sticky[_RHINO_VERSION_STICKY_KEY] = info
+            if info.get("text") and not sc.sticky.get(_RHINO_VERSION_LOG_KEY):
+                print("Detected Rhino version: {}".format(info["text"]))
+                sc.sticky[_RHINO_VERSION_LOG_KEY] = True
+        except Exception:
+            pass
+    else:
+        _VERSION_CACHE = None
+    return _VERSION_CACHE
+
+
+def _is_windows():
+    return System.Environment.OSVersion.Platform == System.PlatformID.Win32NT
+
+
+def _is_macos():
+    platform = System.Environment.OSVersion.Platform
+    return platform == System.PlatformID.MacOSX or platform == System.PlatformID.Unix
+
+
+def _normalize_prusa_path(path):
+    if not path:
+        return None
+    path = os.path.expanduser(path)
+    if _is_macos():
+        lower = path.lower()
+        if lower.endswith(_MAC_APP_SUFFIX):
+            if os.path.isdir(path):
+                app_binary = os.path.join(path, _MAC_APP_EXECUTABLE)
+                if os.path.isfile(app_binary) or os.access(app_binary, os.X_OK):
+                    return os.path.normpath(path)
+            return None
+        if os.path.isfile(path) or os.access(path, os.X_OK):
+            return os.path.normpath(path)
+        return None
+    if os.path.isfile(path) or os.access(path, os.X_OK):
+        return os.path.normpath(path)
+    return None
+
+
+def _config_path():
+    try:
+        commands_dir = os.path.dirname(os.path.abspath(__file__))
+        package_root = os.path.dirname(commands_dir)
+        plugin_root = os.path.dirname(package_root)
+        if plugin_root and os.path.basename(plugin_root) == "dev" and os.path.isdir(plugin_root):
+            base = plugin_root
+        elif package_root and os.path.isdir(package_root):
+            base = package_root
+        else:
+            base = commands_dir
+    except Exception:
+        base = tempfile.gettempdir()
+    return os.path.join(base, _CONFIG_FILENAME)
+
+
+def _load_configured_path():
+    config_path = _config_path()
+    if not os.path.exists(config_path):
+        return None
+    try:
+        with open(config_path, "rb") as handle:
+            payload = json.load(handle)
+    except (IOError, ValueError):
+        return None
+    configured = payload.get("prusa_path")
+    return _normalize_prusa_path(configured) if configured else None
+
+
+def _store_configured_path(path):
+    config_path = _config_path()
+    payload = json.dumps({"prusa_path": path}, indent=2)
+    try:
+        directory = os.path.dirname(config_path)
+        if directory and not os.path.isdir(directory):
+            os.makedirs(directory)
+        with open(config_path, "wb") as handle:
+            handle.write(payload.encode("utf-8"))
+    except IOError:
+        print("Unable to persist the PrusaSlicer path next to the helper script.")
+
+
+def _load_prusaslicer_path():
+    env_path = os.environ.get(_ENV_PATH_KEY)
+    env_path = _normalize_prusa_path(env_path) if env_path else None
+    if env_path:
+        sc.sticky[_PRUSA_PATH_KEY] = env_path
+        return env_path
+
+    config_path = _load_configured_path()
+    if config_path:
+        sc.sticky[_PRUSA_PATH_KEY] = config_path
+        return config_path
+
+    sticky_path = sc.sticky.get(_PRUSA_PATH_KEY)
+    sticky_path = _normalize_prusa_path(sticky_path) if sticky_path else None
+    if sticky_path:
+        sc.sticky[_PRUSA_PATH_KEY] = sticky_path
+        return sticky_path
+
+    if _is_macos():
+        default_path = _normalize_prusa_path(_DEFAULT_MAC_APP_PATH)
+        if default_path:
+            sc.sticky[_PRUSA_PATH_KEY] = default_path
+            return default_path
+    return None
+
+
+def _prompt_for_prusaslicer():
+    if _is_windows():
+        filter_string = "PrusaSlicer executable (*.exe)|*.exe||"
+    elif _is_macos():
+        filter_string = "PrusaSlicer (*.app;PrusaSlicer)|*.app;PrusaSlicer||"
+    else:
+        filter_string = "Executable (*.*)|*.*||"
+
+    path = rs.OpenFileName("Locate PrusaSlicer", filter_string)
+    if not path:
+        return None
+    return _normalize_prusa_path(path)
+
+
+def set_prusaslicer_path(path=None):
+    """Persist the path to the PrusaSlicer executable.
+
+    If *path* is omitted a file dialog is presented. The chosen path is stored
+    in Rhino's sticky dictionary so that future calls can reuse it. The helper
+    also respects the :data:`PRUSA_SLICER_PATH` environment variable.
+    """
+    if path:
+        candidate = _normalize_prusa_path(path)
+    else:
+        candidate = _prompt_for_prusaslicer()
+    if not candidate:
+        print("PrusaSlicer path not set.")
+        return None
+
+    sc.sticky[_PRUSA_PATH_KEY] = candidate
+    _store_configured_path(candidate)
+    print("Stored PrusaSlicer path: {}".format(candidate))
+    return candidate
+
+
+def _select_with_rhinodoc(object_ids):
+    doc = Rhino.RhinoDoc.ActiveDoc
+    if doc is None:
+        if object_ids:
+            rs.SelectObjects(list(object_ids))
+        return
+
+    for object_id in object_ids or ():
+        try:
+            doc.Objects.Select(object_id, True, True)
+        except Exception:
+            pass
+
+
+def _unselect_all_with_rhinodoc():
+    doc = Rhino.RhinoDoc.ActiveDoc
+    if doc is None:
+        rs.UnselectAllObjects()
+        return
+    doc.Objects.UnselectAll()
+
+
+@contextmanager
+def _preserve_selection(new_selection):
+    previous = rs.SelectedObjects() or []
+    try:
+        _unselect_all_with_rhinodoc()
+        if new_selection:
+            _select_with_rhinodoc(tuple(new_selection))
+        yield new_selection
+    finally:
+        _unselect_all_with_rhinodoc()
+        if previous:
+            _select_with_rhinodoc(tuple(previous))
+
+
+def _export_selection(temp_path):
+    command_path = temp_path.replace("\\", "/")
+    macro = "_-Export \"{}\" _Enter".format(command_path)
+    if rs.Command(macro, echo=False):
+        return os.path.exists(temp_path)
+    return False
+
+
+def _sanitize_filename(name):
+    if not name:
+        return None
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", name.strip())
+    cleaned = cleaned.strip("._")
+    return cleaned or None
+
+
+def _document_export_stem():
+    doc = Rhino.RhinoDoc.ActiveDoc
+    if doc is None:
+        return None
+
+    candidate = getattr(doc, "Path", None) or getattr(doc, "Name", None)
+    if not candidate:
+        return None
+
+    basename = os.path.basename(candidate)
+    stem, _ext = os.path.splitext(basename)
+    return _sanitize_filename(stem or basename)
+
+
+def _create_temp_export_path(extension=_DEFAULT_EXTENSION):
+    stem = _document_export_stem()
+    if not stem:
+        stem = "RhinoToSlicer"
+    filename = "{}{}".format(stem, extension)
+    return os.path.join(tempfile.gettempdir(), filename)
+
+
+def _launch_prusaslicer(prusa_path, model_path):
+    try:
+        if _is_macos():
+            lower = prusa_path.lower()
+            if lower.endswith(_MAC_APP_SUFFIX):
+                subprocess.Popen(["open", "-a", prusa_path, model_path])
+                return
+        subprocess.Popen([prusa_path, model_path])
+    except OSError as exc:
+        raise RuntimeError("Unable to start PrusaSlicer: {}".format(exc))
+
+
+def send_to_slicer():
+    """Export the selected geometry to STEP and open it in PrusaSlicer."""
+    detect_rhino_version()
+    objects = rs.GetObjects(
+        "Select objects to slice in PrusaSlicer",
+        preselect=True,
+        select=False,
+        minimum_count=1,
+    )
+    if not objects:
+        print("No geometry selected.")
+        return Result.Cancel
+
+    prusa_path = _load_prusaslicer_path()
+    if not prusa_path:
+        prusa_path = set_prusaslicer_path()
+    if not prusa_path:
+        return Result.Cancel
+
+    export_path = _create_temp_export_path()
+
+    if os.path.exists(export_path):
+        try:
+            os.remove(export_path)
+        except OSError:
+            pass
+
+    with _preserve_selection(objects):
+        success = _export_selection(export_path)
+    if not success:
+        if os.path.exists(export_path):
+            try:
+                os.remove(export_path)
+            except OSError:
+                pass
+        print("Export failed. Check that the STEP exporter is installed and licensed.")
+        return Result.Failure
+
+    try:
+        _launch_prusaslicer(prusa_path, export_path)
+    except RuntimeError as exc:
+        print(str(exc))
+        return Result.Failure
+
+    print("Exported {} objects to {} and launched PrusaSlicer.".format(len(objects), export_path))
+    return Result.Success
+
+
+__commandname__ = COMMAND_NAME
+
+
+def RunCommand(is_interactive):
+    """Entry point used by Rhino's command runner."""
+
+    result = send_to_slicer()
+    return result if isinstance(result, Result) else Result.Success
+
+
+def send_to_prusaslicer():
+    """Backward compatible wrapper for legacy macros."""
+
+    return send_to_slicer()
+
+
+if __name__ == "__main__":
+    send_to_slicer()

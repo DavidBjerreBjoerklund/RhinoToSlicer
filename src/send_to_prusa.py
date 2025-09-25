@@ -2,7 +2,9 @@
 
 This module proxies to the packaged RhinoToSlicer plug-in so that existing
 macros using ``import send_to_prusa`` continue to function whether they run
-inside Rhino or directly from this repository.
+inside Rhino or directly from this repository. The packaged plug-in registers
+the ``Slice`` command; this shim exposes the same helpers under the legacy
+module name.
 """
 
 from __future__ import print_function

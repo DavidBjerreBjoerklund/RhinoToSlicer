@@ -3,7 +3,7 @@
 This repository contains a packaged Rhino Python plug-in that exports the
 current selection as a STEP file and opens it inside
 [PrusaSlicer](https://www.prusa3d.com/page/prusaslicer_424/). Once installed,
-the plug-in adds a `SendToPrusa` command to Rhino so a single click can send
+the plug-in adds a `Slice` command to Rhino so a single click can send
 the active model to the slicer.
 
 ## Features
@@ -34,7 +34,7 @@ the active model to the slicer.
   prefer a symlink for easier updates.
 2. Start Rhino, open **Tools → Options → Plug-ins**, and ensure the
    *RhinoToSlicer* plug-in is enabled. You can now trigger the helper by typing
-   the `SendToPrusa` command, binding it to a toolbar button, or calling it from
+   the `Slice` command, binding it to a toolbar button, or calling it from
    macros. On first launch Rhino may need to load Python support before the
    command appears; running `EditPythonScript` once forces Rhino to refresh the
    plug-in cache.
@@ -48,12 +48,12 @@ on Windows or
 `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`
 on macOS). Copy the contents of `src/plugin/` into that folder so Rhino sees
 the expected `dev` subdirectory. Launch Rhino, enable the plug-in if necessary,
-and run the `SendToPrusa` command once to store the PrusaSlicer path.
+and run the `Slice` command once to store the PrusaSlicer path.
 
 ## Usage
 
 1. Select the geometry you want to slice.
-2. Click the toolbar button or run the `SendToPrusa` command/alias configured
+2. Click the toolbar button or run the `Slice` command/alias configured
    during installation.
 3. Rhino writes the selection to a temporary STEP file and starts PrusaSlicer
    with that file. The exported files are left in your temporary folder so you
@@ -70,5 +70,5 @@ and run the `SendToPrusa` command once to store the PrusaSlicer path.
   Finder would.
 - Linux builds of Rhino are not officially supported, but the script will try
   to launch whichever executable path you provide.
-- The installer stores configuration in `send_to_prusa_config.json` inside the
+- The installer stores configuration in `slicer_config.json` inside the
   plug-in folder so that the slicer path persists across Rhino sessions.

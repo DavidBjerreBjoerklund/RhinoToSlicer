@@ -30,4 +30,4 @@ def OnLoadPlugIn():
     except ImportError:
         return
 
-    Rhino.RhinoApp.WriteLine("RhinoToSlicer {0} ready (command: SendToPrusa).".format(__version__))
+    Rhino.RhinoApp.WriteLine("RhinoToSlicer {0} ready (command: Slice).".format(__version__))

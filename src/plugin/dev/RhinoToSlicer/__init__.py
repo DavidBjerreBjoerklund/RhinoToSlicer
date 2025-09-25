@@ -1,4 +1,4 @@
-"""RhinoToSlicer helpers shared by the SendToPrusa command."""
+"""RhinoToSlicer helpers shared by the Slice command."""
 
 __all__ = ["__version__", "PLUGIN_ID"]
 __version__ = "0.2.0"

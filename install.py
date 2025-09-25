@@ -2,7 +2,7 @@
 """Installer utility for the Rhino ➜ PrusaSlicer bridge.
 
 Running this script copies (or links) the packaged Rhino Python plug-in into
-Rhino's ``PythonPlugIns`` directory so the ``SendToPrusa`` command appears in
+Rhino's ``PythonPlugIns`` directory so the ``Slice`` command appears in
 the plug-in manager. The installer auto-detects the Rhino 8 user data
 directory on Windows and macOS, but the target can be overridden via the
 command line.
@@ -28,7 +28,7 @@ if str(DEV_SOURCE) not in sys.path:
 from RhinoToSlicer import PLUGIN_ID  # noqa: E402 - imported after sys.path tweak
 
 PLUGIN_DIRNAME = "RhinoToSlicer {{{}}}".format(PLUGIN_ID)
-CONFIG_FILENAME = "send_to_prusa_config.json"
+CONFIG_FILENAME = "slicer_config.json"
 DEFAULT_VERSION = "8.0"
 _DEFAULT_MAC_PRUSA_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
 
@@ -255,7 +255,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(
             "Launch Rhino and enable the RhinoToSlicer plug-in under Tools → Options → Plug-ins if it is not loaded automatically."
         )
-        print("Run the SendToPrusa command to send geometry to PrusaSlicer.")
+        print("Run the Slice command to send geometry to PrusaSlicer.")
     return 0
 
 

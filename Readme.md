@@ -19,18 +19,21 @@ the active model to the slicer.
 
 ## Installation
 
-### Quick installer (Rhino 8)
+### Quick installer (Rhino 7+)
 
 1. Run the installer from a terminal:
    ```
    python3 install.py
    ```
-   The script locates the newest Rhino *Python plug-ins* directory automatically
-   (e.g. `%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns` on Windows or
-   `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`
-   on macOS), copies the packaged plug-in there, and prompts for the
-   PrusaSlicer executable. The chosen path is stored inside the plug-in's `dev`
-   folder so future runs know where to launch the slicer from. Pass
+   The script scans standard install locations (e.g.
+   `C:\Program Files\Rhino 7` on Windows or `/Applications/Rhino 8.app` on
+   macOS) to confirm which Rhino builds are present, then targets the newest
+   matching *Python plug-ins* directory automatically (such as
+   `%AppData%\McNeel\Rhinoceros\7.0\Plug-ins\PythonPlugIns` or
+   `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`).
+   It copies the packaged plug-in there and prompts for the PrusaSlicer
+   executable. The chosen path is stored inside the plug-in's `dev` folder so
+   future runs know where to launch the slicer from. Pass
    `--prusa-path /absolute/path` if you prefer a non-interactive setup or
    `--no-prusa-config` to skip the prompt entirely. Use `--mode link` if you
    prefer a symlink for easier updates.
@@ -45,8 +48,8 @@ the active model to the slicer.
 
 If you prefer not to run the installer, create a folder named
 `RhinoToSlicer {2e965250-8f1e-4e55-8b02-01c0924325b8}` in your Rhino Python
-plug-ins directory ( `%AppData%\McNeel\Rhinoceros\8.0\Plug-ins\PythonPlugIns`
-on Windows or
+plug-ins directory (for example
+`%AppData%\McNeel\Rhinoceros\7.0\Plug-ins\PythonPlugIns` on Windows or
 `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/PythonPlugIns`
 on macOS). Copy the contents of `src/plugin/` into that folder so Rhino sees
 the expected `dev` subdirectory. Launch Rhino, enable the plug-in if necessary,

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import plistlib
 import re
 import shutil
 import sys
@@ -69,6 +70,84 @@ def _version_sort_key(value: str) -> List[Tuple[int, object]]:
     return parts
 
 
+def _normalize_version_label(label: Optional[str]) -> Optional[str]:
+    if not label:
+        return None
+    label = str(label).strip()
+    if not label:
+        return None
+    lower = label.lower()
+    if "wip" in lower and not re.search(r"\d", label):
+        return "WIP"
+    match = re.search(r"(\d+)", label)
+    if match:
+        major = match.group(1)
+        return f"{major}.0"
+    return None
+
+
+def _detect_mac_rhino_installs() -> dict[str, Path]:
+    installs: dict[str, Path] = {}
+    apps_dir = Path("/Applications")
+    if not apps_dir.exists():
+        return installs
+    for bundle in apps_dir.glob("Rhino*.app"):
+        version: Optional[str] = None
+        info_path = bundle / "Contents" / "Info.plist"
+        if info_path.exists():
+            try:
+                with info_path.open("rb") as handle:
+                    info = plistlib.load(handle)
+            except Exception:
+                info = None
+            if isinstance(info, dict):
+                version = _normalize_version_label(info.get("CFBundleShortVersionString"))
+                if not version:
+                    version = _normalize_version_label(info.get("CFBundleVersion"))
+        if not version:
+            version = _normalize_version_label(bundle.name)
+        if version:
+            installs.setdefault(version, bundle)
+    return installs
+
+
+def _detect_windows_rhino_installs() -> dict[str, Path]:
+    installs: dict[str, Path] = {}
+    candidate_roots: list[Path] = []
+    for env in ("PROGRAMFILES", "PROGRAMFILES(X86)"):
+        path = os.environ.get(env)
+        if path:
+            candidate_roots.append(Path(path))
+            candidate_roots.append(Path(path) / "McNeel")
+    for root in candidate_roots:
+        if not root.exists():
+            continue
+        for directory in root.glob("Rhino*"):
+            if not directory.is_dir():
+                continue
+            exe = directory / "System" / "Rhino.exe"
+            if not exe.exists():
+                exe = directory / "Rhino.exe"
+            if not exe.exists():
+                continue
+            version = _normalize_version_label(directory.name)
+            if version:
+                installs.setdefault(version, directory)
+    return installs
+
+
+def _detect_installed_rhino_versions() -> dict[str, Path]:
+    installs: dict[str, Path]
+    if sys.platform.startswith("win"):
+        installs = _detect_windows_rhino_installs()
+    elif sys.platform == "darwin":
+        installs = _detect_mac_rhino_installs()
+    else:
+        installs = {}
+    ordered_versions = sorted(installs, key=_version_sort_key)
+    return {version: installs[version] for version in ordered_versions}
+
+
 def _list_installed_versions() -> list[str]:
     base = _rhino_user_base()
     if not base.exists():
@@ -86,6 +165,9 @@ def _list_installed_versions() -> list[str]:
 
 
 def _detect_default_version() -> str:
+    installs = _detect_installed_rhino_versions()
+    if installs:
+        return list(installs.keys())[-1]
     versions = _list_installed_versions()
     if versions:
         return versions[-1]
@@ -210,7 +292,7 @@ def install_plugin(*, plugin_dir: Path, mode: str, dry_run: bool) -> Path:
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Install the RhinoToSlicer helper into Rhino 8.")
+    parser = argparse.ArgumentParser(description="Install the RhinoToSlicer helper into Rhino 7 or newer.")
     parser.add_argument(
         "--scripts-dir",
         type=Path,
@@ -219,7 +301,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--plugins-dir",
         type=Path,
-        help="Override the Rhino Python plug-in directory. Defaults to the Rhino 8 user folder for the current OS.",
+        help="Override the Rhino Python plug-in directory. Defaults to the newest detected Rhino user folder.",
     )
     parser.add_argument(
         "--version",
@@ -285,6 +367,8 @@ def _perform_install(
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
 
+    detected_installs = _detect_installed_rhino_versions()
+
     if args.scripts_dir:
         print(
             "--scripts-dir is deprecated for the packaged plug-in installer. Use --plugins-dir instead."
@@ -302,6 +386,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         plugin_dir = _detect_rhino_python_plugin_dir(version)
 
     print(f"Target Rhino version: {version}")
+    if detected_installs:
+        print("Detected Rhino installations:")
+        for detected_version, path in detected_installs.items():
+            print(f"  {detected_version}: {path}")
+    if not args.plugins_dir and not args.scripts_dir:
+        install_path = detected_installs.get(version)
+        if not install_path:
+            print("No Rhino installation matching that version was found.")
+            if detected_installs:
+                print("Re-run the installer with --version to choose one of the detected versions above.")
+            else:
+                print("Install Rhino 7 or newer before running the installer, or supply --plugins-dir manually.")
+            return 1
+        print(f"Using Rhino installation at {install_path}")
+
     print(f"Target Rhino user directory: {user_dir}")
     print(f"Target Rhino Python plug-in directory: {plugin_dir}")
 

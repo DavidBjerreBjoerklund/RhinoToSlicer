@@ -21,6 +21,7 @@ PLUGIN_DIRNAME = "RhinoToSlicer"
 COMMAND_RELATIVE_PATH = Path("commands") / "send_to_prusa.py"
 CONFIG_FILENAME = "send_to_prusa_config.json"
 DEFAULT_VERSION = "8.0"
+_DEFAULT_MAC_PRUSA_PATH = "/Applications/Original Prusa Drivers/PrusaSlicer.app"
 
 
 def _detect_rhino_user_dir(version: str) -> Path:
@@ -107,6 +108,8 @@ def _configure_prusa_path(destination: Path, provided: Optional[str], *, dry_run
         print(f"Ignoring invalid PrusaSlicer path: {provided}")
     if not normalized:
         existing = _load_existing_config(destination)
+        if not existing and sys.platform == "darwin":
+            existing = _normalize_prusa_path(_DEFAULT_MAC_PRUSA_PATH)
         normalized = _prompt_for_prusa_path(existing)
     if not normalized:
         print("PrusaSlicer path not stored. You can run the installer again with --prusa-path.")

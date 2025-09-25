@@ -1,4 +1,4 @@
-"""Rhino CPython plug-in entry point for the Rhino ➜ PrusaSlicer bridge."""
+"""Rhino CPython plug-in entry point for the Rhino to PrusaSlicer bridge."""
 
 import os
 import sys
